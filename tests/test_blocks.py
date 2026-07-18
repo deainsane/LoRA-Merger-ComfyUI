@@ -82,3 +82,67 @@ class TestKeyWeight:
 
     def test_unmatched_key_is_one(self):
         assert key_weight("diffusion_model.final_layer.weight", KREA2_DEF) == 1.0
+
+
+from collections import OrderedDict
+from blocks import compute_lora_weights, merge_selection, apply_selection
+
+
+class TestComputeLoraWeights:
+    def test_only_non_default_weights_stored(self):
+        keys = [
+            "diffusion_model.blocks.0.attn.wq.weight",    # group 0 -> 1.0 (omitted)
+            "diffusion_model.blocks.25.attn.wq.weight",   # group 5 -> 0.0 (stored)
+            "diffusion_model.txtmlp.0.weight",            # pathway -> 0.0 (stored)
+        ]
+        out = compute_lora_weights(keys, KREA2_DEF)
+        assert out == {
+            "diffusion_model.blocks.25.attn.wq.weight": 0.0,
+            "diffusion_model.txtmlp.0.weight": 0.0,
+        }
+
+    def test_tuple_keys_normalized(self):
+        keys = [("diffusion_model.blocks.25.attn.wq.weight", (0, 0, 9))]
+        out = compute_lora_weights(keys, KREA2_DEF)
+        assert out == {"diffusion_model.blocks.25.attn.wq.weight": 0.0}
+
+
+class TestMergeSelection:
+    def test_adds_new_lora(self):
+        out = merge_selection({"a": {"k": 0.5}}, "b", {"k2": 0.2})
+        assert out == {"a": {"k": 0.5}, "b": {"k2": 0.2}}
+
+    def test_override_existing_lora(self):
+        out = merge_selection({"a": {"k": 0.5}}, "a", {"k2": 0.2})
+        assert out == {"a": {"k2": 0.2}}
+
+    def test_does_not_mutate_input(self):
+        base = {"a": {"k": 0.5}}
+        merge_selection(base, "b", {"k2": 0.2})
+        assert base == {"a": {"k": 0.5}}
+
+
+class TestApplySelection:
+    def _stack(self):
+        return OrderedDict([
+            ("lora0", ["diffusion_model.blocks.25.attn.wq.weight"]),
+            ("lora1", ["diffusion_model.blocks.3.attn.wq.weight"]),
+        ])
+
+    def test_selects_by_index(self):
+        out = apply_selection(self._stack(), KREA2_DEF, index=0)
+        assert out == {"lora0": {"diffusion_model.blocks.25.attn.wq.weight": 0.0}}
+
+    def test_chaining_accumulates_different_indices(self):
+        first = apply_selection(self._stack(), KREA2_DEF, index=0)
+        second = apply_selection(self._stack(), KREA2_DEF, index=1, incoming_selection=first)
+        assert set(second.keys()) == {"lora0", "lora1"}
+
+    def test_out_of_range_index_passes_through(self):
+        incoming = {"lora0": {"k": 0.5}}
+        out = apply_selection(self._stack(), KREA2_DEF, index=9, incoming_selection=incoming)
+        assert out == {"lora0": {"k": 0.5}}
+
+    def test_empty_stack_passes_through(self):
+        out = apply_selection(OrderedDict(), KREA2_DEF, index=0, incoming_selection={"x": {}})
+        assert out == {"x": {}}
