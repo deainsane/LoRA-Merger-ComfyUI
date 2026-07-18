@@ -85,7 +85,7 @@ class TestKeyWeight:
 
 
 from collections import OrderedDict
-from blocks import compute_lora_weights, merge_selection, apply_selection, build_block_selection_dict, resolve_block_selection
+from blocks import compute_lora_weights, merge_selection, build_block_selection_dict, resolve_block_selection
 
 
 class TestComputeLoraWeights:
@@ -183,32 +183,6 @@ class TestResolveBlockSelection:
     def test_empty_keys_by_name_returns_none(self):
         out = resolve_block_selection({"configs": {0: KREA2_DEF}, "chain": None}, OrderedDict())
         assert out is None
-
-
-class TestApplySelection:
-    def _stack(self):
-        return OrderedDict([
-            ("lora0", ["diffusion_model.blocks.25.attn.wq.weight"]),
-            ("lora1", ["diffusion_model.blocks.3.attn.wq.weight"]),
-        ])
-
-    def test_selects_by_index(self):
-        out = apply_selection(self._stack(), KREA2_DEF, index=0)
-        assert out == {"lora0": {"diffusion_model.blocks.25.attn.wq.weight": 0.0}}
-
-    def test_chaining_accumulates_different_indices(self):
-        first = apply_selection(self._stack(), KREA2_DEF, index=0)
-        second = apply_selection(self._stack(), KREA2_DEF, index=1, incoming_selection=first)
-        assert set(second.keys()) == {"lora0", "lora1"}
-
-    def test_out_of_range_index_passes_through(self):
-        incoming = {"lora0": {"k": 0.5}}
-        out = apply_selection(self._stack(), KREA2_DEF, index=9, incoming_selection=incoming)
-        assert out == {"lora0": {"k": 0.5}}
-
-    def test_empty_stack_passes_through(self):
-        out = apply_selection(OrderedDict(), KREA2_DEF, index=0, incoming_selection={"x": {}})
-        assert out == {"x": {}}
 
 
 import torch
