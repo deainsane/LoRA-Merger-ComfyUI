@@ -114,3 +114,24 @@ def apply_selection(keys_by_name: "Dict[str, Iterable[Any]]",
             f"[PM Block Selector] No block-weight overrides for '{lora_name}' "
             f"(all effective weights are 1.0, or the definition does not match this LoRA).")
     return merge_selection(incoming_selection, lora_name, weights)
+
+
+def apply_block_weights(uda: Dict[str, Any],
+                        key_str: str,
+                        block_selection: Optional[Dict[str, Dict[str, float]]]) -> Dict[str, Any]:
+    """Scale each LoRA's ``up`` factor by its block weight for ``key_str``.
+
+    ``uda`` maps lora_name -> (up, down, alpha). Weight 0 drops that LoRA from the key.
+    Returns the same object when there is no selection to apply.
+    """
+    if not block_selection:
+        return uda
+    out: Dict[str, Any] = {}
+    for lora_name, (up, down, alpha) in uda.items():
+        w = block_selection.get(lora_name, {}).get(key_str, 1.0)
+        if w == 0:
+            continue
+        if w != 1.0:
+            up = up * w
+        out[lora_name] = (up, down, alpha)
+    return out

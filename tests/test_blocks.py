@@ -146,3 +146,40 @@ class TestApplySelection:
     def test_empty_stack_passes_through(self):
         out = apply_selection(OrderedDict(), KREA2_DEF, index=0, incoming_selection={"x": {}})
         assert out == {"x": {}}
+
+
+import torch
+from blocks import apply_block_weights
+
+
+class TestApplyBlockWeights:
+    def _uda(self):
+        up = torch.ones(4, 2)
+        down = torch.ones(2, 3)
+        return {"loraA": (up, down, torch.tensor(2.0))}
+
+    def test_no_selection_returns_input(self):
+        uda = self._uda()
+        assert apply_block_weights(uda, "k", None) is uda
+
+    def test_weight_scales_up_only(self):
+        out = apply_block_weights(self._uda(), "k", {"loraA": {"k": 0.5}})
+        up, down, alpha = out["loraA"]
+        assert torch.allclose(up, torch.full((4, 2), 0.5))
+        assert torch.allclose(down, torch.ones(2, 3))   # down untouched
+        assert float(alpha) == 2.0
+
+    def test_delta_scales_linearly(self):
+        base = self._uda()["loraA"]
+        base_delta = base[0] @ base[1]
+        up, down, _ = apply_block_weights(self._uda(), "k", {"loraA": {"k": 0.5}})["loraA"]
+        assert torch.allclose(up @ down, 0.5 * base_delta)
+
+    def test_weight_zero_drops_lora(self):
+        out = apply_block_weights(self._uda(), "k", {"loraA": {"k": 0.0}})
+        assert out == {}
+
+    def test_missing_key_defaults_to_one(self):
+        out = apply_block_weights(self._uda(), "other_key", {"loraA": {"k": 0.5}})
+        up, _, _ = out["loraA"]
+        assert torch.allclose(up, torch.ones(4, 2))
