@@ -182,7 +182,7 @@ Outputs:
                 weights = [self.strengths[lora_name]["strength_model"] for lora_name in lora_key_tuples.keys()]
             weights = torch.tensor(weights, dtype=dtype).to(device=device)
 
-            def calculate(tensors_):
+            def calculate(tensors_, method_weights):
                 # For CLIP layers, use simple weighted average
                 # For UNet layers, use the selected merge method
                 if is_clip:
@@ -190,7 +190,7 @@ Outputs:
                     lora_names = list(lora_key_tuples.keys())
                     tensor_dict = {lora_names[i]: t.to(device=device, dtype=dtype)
                                    for i, t in enumerate(tensors_)}
-                    weight_dict = {lora_names[i]: weights[i].item()
+                    weight_dict = {lora_names[i]: method_weights[i].item()
                                    for i in range(len(lora_names))}
 
                     # Use simple weighted average for CLIP
@@ -202,11 +202,8 @@ Outputs:
                         dtype=dtype
                     )
 
-                    # Apply lambda scaling
-                    if lambda_ < 1.0:
-                        out = out * lambda_
-
-                    # Move to CPU
+                    # Move to CPU (lambda scaling is applied once to the
+                    # reconstructed delta below, not per up/down factor)
                     out = out.to(device='cpu', dtype=torch.float32)
                     return out
                 else:
@@ -217,7 +214,7 @@ Outputs:
                     for i, t in enumerate(tensors_):
                         ref = ModelReference(model=ModelPath(path=f'{key}.{i}'))
                         tensor_map[ref] = t
-                        tensor_weight_map[ref] = weights[i]
+                        tensor_weight_map[ref] = method_weights[i]
 
                     gather_tensors = GatherTensors(weight_info=create_map(key, tensor_map, dtype))
                     tensor_parameters = ImmutableMap(
@@ -230,11 +227,8 @@ Outputs:
                     # Call the merge method
                     out = method(tensor_map, gather_tensors, weight_info, tensor_parameters, method_args)
 
-                    # Apply lambda scaling
-                    if lambda_ < 1.0:
-                        out = out * lambda_
-
-                    # Offload the result to CPU
+                    # Offload the result to CPU (lambda scaling is applied once to the
+                    # reconstructed delta below, not per up/down factor)
                     load_on_device(tensor_map, tensor_weight_map, "cpu", dtype)
                     out = out.to(device='cpu', dtype=torch.float32)
                     return out
@@ -249,9 +243,42 @@ Outputs:
             if len(down_tensors) > 0:
                 logging.debug(f"Key {key}: down_tensors[0] shape = {down_tensors[0].shape}")
 
-            up = calculate(up_tensors)
-            down = calculate(down_tensors)
+            if is_clip:
+                # CLIP uses a normalized weighted average; the overall strength
+                # magnitude is re-applied once below via clip_scale.
+                up = calculate(up_tensors, weights)
+                down = calculate(down_tensors, weights)
+            else:
+                # Full linearization for every UNet merge method: feed the merge
+                # method sqrt-magnitude weights so each factor is scaled by
+                # sqrt(|strength|), with the sign carried on the up factor only.
+                # The reconstructed delta = up @ down then scales each LoRA's own
+                # contribution linearly by its strength (sign(s)*sqrt|s| * sqrt|s|
+                # = s), instead of the strength**2 scaling that results from
+                # applying the full weight to both factors. Cross-terms between
+                # different LoRAs scale as sqrt(|s_i|*|s_j|) rather than s_i*s_j,
+                # so they shrink rather than grow relative to the linear terms.
+                sqrt_mag = weights.abs().sqrt()
+                up = calculate(up_tensors, weights.sign() * sqrt_mag)
+                down = calculate(down_tensors, sqrt_mag)
             alpha_0 = next(iter(lora_key_tuples.values()))[2]
+
+            # For CLIP layers, calculate() returns a normalized (direction-only)
+            # weighted average, so strength_clip has no effect on the reconstructed
+            # delta on its own. Re-apply the overall strength magnitude once here
+            # (to the up factor only) so strength_clip scales the delta linearly:
+            # for a single CLIP LoRA, delta = strength_clip * (up @ down); for
+            # multiple, it is a normalized blend scaled by the summed strengths.
+            if is_clip:
+                clip_scale = float(weights.sum().item())
+                up = up * clip_scale
+
+            # Apply lambda scaling once to the reconstructed delta.
+            # The effective LoRA delta is (alpha/rank) * (up @ down), so scaling
+            # only the up factor scales the delta linearly by lambda_. Scaling
+            # both up and down (as before) scaled the delta by lambda_**2.
+            if lambda_ < 1.0:
+                up = up * lambda_
 
             # Debug logging for results
             logging.debug(f"Key {key}: merged up shape = {up.shape}, merged down shape = {down.shape}")
