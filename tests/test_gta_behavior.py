@@ -2,7 +2,7 @@ import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import importlib.util
 import torch
-from gta_helpers import load_gta, run
+from gta_helpers import load_gta, gta, run
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "src"))
@@ -16,6 +16,11 @@ def _load(modfile, name):
     sys.modules[name] = m
     spec.loader.exec_module(m)
     return m
+
+
+def _delta_from_lora(up, down, alpha):
+    rank = up.shape[1]
+    return (alpha / rank) * (up @ down)
 
 
 def test_refactor_reconstructs_delta():
@@ -33,4 +38,27 @@ def test_refactor_reconstructs_delta():
     assert err < 0.05, f"reconstruction error {err}"
 
 
-run([("refactor_reconstructs", test_refactor_reconstructs_delta)])
+def test_style_plus_character_nonoverlap_keeps_strength():
+    torch.manual_seed(0)
+    A = torch.zeros(4, 6); A[0, :] = 2.0
+    B = torch.zeros(4, 6); B[2, :] = 2.0
+    merged = gta.gta_merge([A, B], torch.tensor([1.0, 1.0]), mode="ties",
+                           density=1.0, normalize=True)
+    assert torch.allclose(merged[0], A[0])
+    assert torch.allclose(merged[2], B[2])
+
+
+def test_normalize_does_not_collapse_as_1_over_n_squared():
+    torch.manual_seed(0)
+    deltas = [torch.randn(6, 6) for _ in range(4)]
+    merged = gta.gta_merge(deltas, torch.ones(4), mode="ties", density=1.0,
+                           normalize=True)
+    avg = torch.stack(deltas).mean(0)
+    assert merged.norm() > 0.5 * avg.norm()
+
+
+run([
+    ("refactor_reconstructs", test_refactor_reconstructs_delta),
+    ("nonoverlap_keeps_strength", test_style_plus_character_nonoverlap_keeps_strength),
+    ("no_1_over_n_squared", test_normalize_does_not_collapse_as_1_over_n_squared),
+])
