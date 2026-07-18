@@ -8,6 +8,7 @@ import comfy
 
 from .architectures.sd_lora import analyse_keys, calc_up_down_alphas
 from .types import LORA_TENSORS_BY_LAYER, LORA_STACK, LORA_TENSOR_DICT
+from .blocks import apply_block_weights, normalize_key
 from .utility import map_device, adjust_tensor_dims
 
 
@@ -22,6 +23,7 @@ class LoraDecompose:
         self.last_svd_rank: int = -1
         self.last_decomposition_method: str = ""
         self.last_layer_filter: Optional[Set[str]] = None
+        self.last_block_selection_hash: Optional[str] = None
         self.last_result: LORA_TENSORS_BY_LAYER = {}
 
     @classmethod
@@ -61,6 +63,11 @@ class LoraDecompose:
                            {"tooltip": "Decomposition device. Note: All decomposition uses float32 internally for numerical stability, then converts back to the original dtype."}
                            ),
             },
+            "optional": {
+                "block_selection": ("BlockSelection", {
+                    "tooltip": "Per-block, per-LoRA weights from PM Block Selector. "
+                               "Scales each LoRA's contribution per block; weight 0 drops the block."}),
+            },
         }
 
     RETURN_TYPES = ("LoRATensors",)
@@ -79,7 +86,8 @@ Decomposition Methods:
 Features hash-based caching to skip recomputation when inputs haven't changed."""
 
     def lora_decompose(self, key_dicts: LORA_STACK = None,
-                       decomposition_method="rSVD", svd_rank=-1, device=None):
+                       decomposition_method="rSVD", svd_rank=-1, device=None,
+                       block_selection=None):
         device, _ = map_device(device, "float32")
 
         logging.info(f"Decomposing {len(key_dicts)} LoRAs: {list(key_dicts.keys())}")
@@ -90,6 +98,7 @@ Features hash-based caching to skip recomputation when inputs haven't changed.""
         if (self.last_lora_names_hash == lora_names_hash_new
                 and self.last_svd_rank == svd_rank
                 and self.last_decomposition_method == decomposition_method
+                and self.last_block_selection_hash == self.compute_hash(block_selection)
                 and self.last_tensor_sum == self.compute_sum(key_dicts)):
             logging.info("Key dicts have not changed, returning last result.")
             if self.last_result is not None:
@@ -103,10 +112,12 @@ Features hash-based caching to skip recomputation when inputs haven't changed.""
         self.last_tensor_sum = self.compute_sum(key_dicts)
         self.last_svd_rank = svd_rank
         self.last_decomposition_method = decomposition_method
+        self.last_block_selection_hash = self.compute_hash(block_selection)
 
         self.last_result = self.decompose(key_dicts=key_dicts, device=device,
                                           decomposition_method=decomposition_method,
-                                          svd_rank=svd_rank)
+                                          svd_rank=svd_rank,
+                                          block_selection=block_selection)
         return (self.last_result,)
 
     @staticmethod
@@ -125,7 +136,8 @@ Features hash-based caching to skip recomputation when inputs haven't changed.""
                 sum_ += up.sum().item() + down.sum().item()
         return sum_
 
-    def decompose(self, key_dicts, device, decomposition_method, svd_rank) -> LORA_TENSORS_BY_LAYER:
+    def decompose(self, key_dicts, device, decomposition_method, svd_rank,
+                   block_selection=None) -> LORA_TENSORS_BY_LAYER:
         """
         Decomposes LoRA models into their components.
         Args:
@@ -150,8 +162,13 @@ Features hash-based caching to skip recomputation when inputs haven't changed.""
         pbar = comfy.utils.ProgressBar(len(keys))
         start = time.time()
 
-        def process_key(key, device_=device) -> LORA_TENSOR_DICT:
+        def process_key(key, device_=device):
             uda = calc_up_down_alphas(key_dicts, key, load_device=device_, scale_to_alpha_0=True)
+
+            # Apply per-block, per-LoRA weights (scales the up factor; weight 0 drops the LoRA)
+            uda = apply_block_weights(uda, normalize_key(key), block_selection)
+            if not uda:
+                return None  # every contribution dropped for this key
 
             # Determine if SVD should be applied
             if decomposition_method == "none":
@@ -179,7 +196,9 @@ Features hash-based caching to skip recomputation when inputs haven't changed.""
         # Batch progress bar updates to reduce overhead for large layer counts (900+)
         update_frequency = max(1, len(keys) // 100)  # Update at most 100 times
         for i, key in enumerate(keys):
-            out[key] = process_key(key)
+            result = process_key(key)
+            if result is not None:
+                out[key] = result
             if (i + 1) % update_frequency == 0 or (i + 1) == len(keys):
                 # Update by the batch size, or remaining items on last iteration
                 batch_size = update_frequency if (i + 1) < len(keys) else ((i + 1) % update_frequency or update_frequency)

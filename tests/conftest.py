@@ -22,13 +22,10 @@ if src_path not in sys.path:
 import pytest
 
 def pytest_ignore_collect(collection_path, config):
-    """Ignore collection of __init__.py in project root"""
-    # Convert to string for comparison
+    """Ignore collection of __init__.py files and src/ directory."""
     path_str = str(collection_path)
-    # Ignore the root __init__.py
-    if path_str.endswith('__init__.py') and 'tests' not in path_str:
+    if path_str.endswith('__init__.py'):
         return True
-    # Ignore src directory
     if '/src/' in path_str or path_str.endswith('/src'):
         return True
     return False
