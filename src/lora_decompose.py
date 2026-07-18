@@ -1,15 +1,34 @@
 import hashlib
 import logging
 import time
-from typing import Optional, Set
+from typing import Optional, Set, Tuple
 
 import torch
 import comfy
 
 from .architectures.sd_lora import analyse_keys, calc_up_down_alphas
 from .types import LORA_TENSORS_BY_LAYER, LORA_STACK, LORA_TENSOR_DICT
-from .blocks import apply_block_weights, normalize_key
+from .blocks import apply_block_weights, normalize_key, resolve_block_selection
 from .utility import map_device, adjust_tensor_dims
+
+
+class AnyType(str):
+    def __ne__(self, __value: object) -> False:
+        return False
+
+
+any_type = AnyType("*")
+
+
+class FlexibleOptionalInputType(dict):
+    def __init__(self, type_):
+        self.type = type_
+
+    def __getitem__(self, key):
+        return (self.type,)
+
+    def __contains__(self, key):
+        return True
 
 
 class LoraDecompose:
@@ -159,6 +178,10 @@ Features hash-based caching to skip recomputation when inputs haven't changed.""
             unique_keys = len(keys) - shared_keys
             logging.info(f"Key overlap: {shared_keys} shared keys, {unique_keys} unique keys across {len(lora_names)} LoRAs")
 
+        # Resolve index-based BlockSelection to lora-name-based {lora_name: {key: weight}}
+        keys_by_name = {name: list(lora_key_dict.keys()) for name, lora_key_dict in key_dicts.items()}
+        resolved_selection = resolve_block_selection(block_selection, keys_by_name)
+
         pbar = comfy.utils.ProgressBar(len(keys))
         start = time.time()
 
@@ -166,7 +189,7 @@ Features hash-based caching to skip recomputation when inputs haven't changed.""
             uda = calc_up_down_alphas(key_dicts, key, load_device=device_, scale_to_alpha_0=True)
 
             # Apply per-block, per-LoRA weights (scales the up factor; weight 0 drops the LoRA)
-            uda = apply_block_weights(uda, normalize_key(key), block_selection)
+            uda = apply_block_weights(uda, normalize_key(key), resolved_selection)
             if not uda:
                 return None  # every contribution dropped for this key
 
