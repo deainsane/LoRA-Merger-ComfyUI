@@ -85,7 +85,7 @@ class TestKeyWeight:
 
 
 from collections import OrderedDict
-from blocks import compute_lora_weights, merge_selection, apply_selection
+from blocks import compute_lora_weights, merge_selection, apply_selection, build_block_selection_dict, resolve_block_selection
 
 
 class TestComputeLoraWeights:
@@ -120,6 +120,69 @@ class TestMergeSelection:
         base = {"a": {"k": 0.5}}
         merge_selection(base, "b", {"k2": 0.2})
         assert base == {"a": {"k": 0.5}}
+
+
+class TestBuildBlockSelectionDict:
+    def test_first_node_returns_configs_with_none_chain(self):
+        result = build_block_selection_dict(None, index=0, definition=KREA2_DEF)
+        assert result == {"configs": {0: KREA2_DEF}, "chain": None}
+
+    def test_chaining_adds_second_index(self):
+        chain = {"configs": {0: KREA2_DEF}, "chain": None}
+        result = build_block_selection_dict(chain, index=1, definition=KREA2_DEF)
+        assert result == {"configs": {0: KREA2_DEF, 1: KREA2_DEF}, "chain": chain}
+
+    def test_chain_is_preserved(self):
+        chain = {"configs": {0: KREA2_DEF}, "chain": {"configs": {2: KREA2_DEF}, "chain": None}}
+        result = build_block_selection_dict(chain, index=1, definition=KREA2_DEF)
+        assert result["chain"] is chain
+
+    def test_index_collision_raises(self):
+        import pytest
+        chain = {"configs": {0: KREA2_DEF}, "chain": None}
+        with pytest.raises(ValueError, match="already has a config"):
+            build_block_selection_dict(chain, index=0, definition=KREA2_DEF)
+
+    def test_negative_index_raises(self):
+        import pytest
+        with pytest.raises(ValueError, match="negative"):
+            build_block_selection_dict(None, index=-1, definition=KREA2_DEF)
+
+
+class TestResolveBlockSelection:
+    def _keys_by_name(self):
+        return OrderedDict([
+            ("lora0", ["diffusion_model.blocks.25.attn.wq.weight"]),
+            ("lora1", ["diffusion_model.blocks.17.attn.wq.weight"]),
+        ])
+
+    def test_resolves_index_to_lora_name(self):
+        selection = {"configs": {0: KREA2_DEF}, "chain": None}
+        out = resolve_block_selection(selection, self._keys_by_name())
+        assert out == {"lora0": {"diffusion_model.blocks.25.attn.wq.weight": 0.0}}
+
+    def test_resolves_different_indices(self):
+        selection = {"configs": {0: KREA2_DEF, 1: KREA2_DEF}, "chain": None}
+        out = resolve_block_selection(selection, self._keys_by_name())
+        assert set(out.keys()) == {"lora0", "lora1"}
+
+    def test_out_of_range_index_skipped_with_warning(self, caplog):
+        selection = {"configs": {9: KREA2_DEF}, "chain": None}
+        out = resolve_block_selection(selection, dict(self._keys_by_name()))
+        assert out is None
+        assert "out of range" in caplog.text
+
+    def test_empty_configs_returns_none(self):
+        out = resolve_block_selection({"configs": {}, "chain": None}, self._keys_by_name())
+        assert out is None
+
+    def test_none_selection_returns_none(self):
+        out = resolve_block_selection(None, self._keys_by_name())
+        assert out is None
+
+    def test_empty_keys_by_name_returns_none(self):
+        out = resolve_block_selection({"configs": {0: KREA2_DEF}, "chain": None}, OrderedDict())
+        assert out is None
 
 
 class TestApplySelection:

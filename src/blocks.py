@@ -89,6 +89,62 @@ def merge_selection(base: Optional[Dict[str, Dict[str, float]]],
     return out
 
 
+def build_block_selection_dict(
+    chain: Optional[dict],
+    index: int,
+    definition: Dict[str, Any]
+) -> dict:
+    """Build a BlockSelection dict by merging a new (index, definition) pair into chain.
+
+    ``chain`` is the previous BlockSelection dict (or None). Raises ValueError on
+    index collision or negative index.
+    """
+    if index < 0:
+        raise ValueError(f"[PM Block Selector] index must be non-negative, got {index}")
+    new_configs = {index: definition}
+    if chain is None:
+        return {"configs": new_configs, "chain": None}
+    if index in chain["configs"]:
+        raise ValueError(
+            f"[PM Block Selector] index {index} already has a config "
+            f"(chaining two BlockSelectors with the same index is not allowed)"
+        )
+    merged = dict(chain["configs"])
+    merged.update(new_configs)
+    return {"configs": merged, "chain": chain}
+
+
+def resolve_block_selection(
+    selection: Optional[dict],
+    keys_by_name: Dict[str, List[Any]]
+) -> Optional[Dict[str, Dict[str, float]]]:
+    """Resolve a BlockSelection dict (index -> BlockDefinition) to the format
+    expected by ``apply_block_weights``: {lora_name: {key: weight}}.
+
+    ``keys_by_name`` maps lora_name to its layer keys (from LoraDecompose.key_dicts).
+    Returns None if ``selection`` is None, empty, or resolves to nothing.
+    Logs a warning for out-of-range indices (those configs are skipped).
+    """
+    if not selection or not keys_by_name:
+        return None
+    lora_names = list(keys_by_name.keys())
+    configs = selection.get("configs", {})
+    if not configs:
+        return None
+    result = {}
+    for idx, definition in configs.items():
+        if idx < 0 or idx >= len(lora_names):
+            logging.warning(
+                f"[PM Block Selector] index {idx} out of range (0..{len(lora_names) - 1}); skipping."
+            )
+            continue
+        lora_name = lora_names[idx]
+        weights = compute_lora_weights(keys_by_name[lora_name], definition)
+        if weights:
+            result[lora_name] = weights
+    return result if result else None
+
+
 def apply_selection(keys_by_name: "Dict[str, Iterable[Any]]",
                     definition: Dict[str, Any],
                     index: int,
