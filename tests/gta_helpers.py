@@ -20,6 +20,9 @@ def load_gta():
     return mod
 
 
+gta = load_gta()
+
+
 def run(tests):
     """Run a dict/list of {name: fn}. Exit non-zero on first failure."""
     if isinstance(tests, dict):
