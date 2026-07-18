@@ -113,3 +113,37 @@ def sparsify(tensor: torch.Tensor, method: Optional[str], *, density: float = 1.
     if method == "della_magprune":
         return _della_magprune(tensor, density, epsilon, rescale_norm)
     raise ValueError(f"unknown sparsify method {method!r}")
+
+
+# --------------------------------------------------------- sign + merge
+def elect_sign(weighted_deltas: torch.Tensor) -> torch.Tensor:
+    """Per-element elected sign from stacked weighted deltas (shape [N, *]).
+    Uses the TIES 'sum' method: sign of the summed weighted delta."""
+    sign_weight = weighted_deltas.sum(dim=0)
+    return (sign_weight >= 0).to(weighted_deltas.dtype) * 2 - 1
+
+
+def disjoint_merge(deltas: torch.Tensor, weights: torch.Tensor, *,
+                   sign_consensus: bool, normalize: bool) -> torch.Tensor:
+    """Merge stacked deltas (shape [N, *]) with per-LoRA `weights` (shape [N]).
+
+    weighted_deltas = deltas * weights (broadcast). When sign_consensus, elect a
+    per-element sign and keep only agreeing contributions. `normalize` divides by
+    the per-element sum of surviving weights (weighted average)."""
+    w = weights.clone()
+    while w.dim() < deltas.dim():
+        w = w.unsqueeze(-1)
+    weighted = deltas * w
+
+    if sign_consensus:
+        sign = elect_sign(weighted)
+        agree = (torch.sign(weighted) == sign).to(deltas.dtype)
+    else:
+        agree = torch.ones_like(weighted)
+
+    mixed = (weighted * agree).sum(dim=0)
+    divisor = (w.abs() * agree).sum(dim=0) if sign_consensus else (w * agree).sum(dim=0)
+    divisor = torch.where(divisor.abs() < 1e-8, torch.ones_like(divisor), divisor)
+    if normalize:
+        mixed = mixed / divisor
+    return mixed
