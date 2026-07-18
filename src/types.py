@@ -25,6 +25,9 @@ LORA_TENSOR_DICT = Dict[str, LORA_TENSORS]
 # This represents all layers for all LoRAs being merged
 LORA_TENSORS_BY_LAYER = Dict[str, LORA_TENSOR_DICT]
 
+# BlockSelection dict: maps stack index -> BlockDefinition
+BlockSelectionConfig = Dict[int, Dict[str, Any]]
+
 
 # ============================================================================
 # ComfyUI LoRA Types
@@ -323,6 +326,7 @@ __all__ = [
     'LORA_STACK',
     'LORA_RAW_DICT',
     'LORA_WEIGHTS',
+    'BlockSelectionConfig',
 
     # Merge types
     'MergeMethodDict',
