@@ -115,6 +115,45 @@ def sparsify(tensor: torch.Tensor, method: Optional[str], *, density: float = 1.
     raise ValueError(f"unknown sparsify method {method!r}")
 
 
+# --------------------------------------------------------- mode config
+_MODE_SPARSIFY = {
+    "linear": None,
+    "task_arithmetic": None,
+    "ties": "magnitude",
+    "dare": "random",
+    "della": "della_magprune",
+    "breadcrumbs": "magnitude_outliers",
+}
+_MODE_ALWAYS_CONSENSUS = {"ties"}
+_MODE_NEVER_CONSENSUS = {"linear", "task_arithmetic"}
+
+GTA_MODES = tuple(_MODE_SPARSIFY.keys())
+
+
+def gta_merge(deltas: List[torch.Tensor], weights: torch.Tensor, *, mode: str,
+              normalize: bool = True, density: float = 1.0, epsilon: float = 0.0,
+              gamma: float = 0.0, sign_consensus_algorithm: bool = False,
+              rescale_norm: Optional[str] = None) -> torch.Tensor:
+    """Merge a list of full LoRA deltas with GTA semantics on the delta itself.
+
+    `weights` are the per-LoRA merge strengths (signed). Returns the merged delta."""
+    if mode not in _MODE_SPARSIFY:
+        raise ValueError(f"unknown GTA mode {mode!r}")
+    if mode in _MODE_ALWAYS_CONSENSUS:
+        consensus = True
+    elif mode in _MODE_NEVER_CONSENSUS:
+        consensus = False
+    else:
+        consensus = bool(sign_consensus_algorithm)
+
+    sp = _MODE_SPARSIFY[mode]
+    sparse = [sparsify(d, sp, density=density, gamma=gamma, epsilon=epsilon,
+                       rescale_norm=rescale_norm) for d in deltas]
+    stack = torch.stack(sparse, dim=0)
+    return disjoint_merge(stack, weights.to(stack.dtype), sign_consensus=consensus,
+                          normalize=normalize)
+
+
 # --------------------------------------------------------- sign + merge
 def elect_sign(weighted_deltas: torch.Tensor) -> torch.Tensor:
     """Per-element elected sign from stacked weighted deltas (shape [N, *]).
