@@ -1,7 +1,7 @@
 # Delta-space GTA merge (own TIES/DARE/DELLA), with SVD refactor
 
 **Date:** 2026-07-19
-**Status:** Approved design, pending implementation plan
+**Status:** Implemented (2026-07-19)
 **Area:** `custom_nodes/LoRA-Merger-ComfyUI`
 
 ## Problem
@@ -208,3 +208,14 @@ Cases:
 - slerp, karcher, nuslerp, sce, nearswap (stay on mergekit).
 - CLIP merge path (unchanged).
 - Fixing the repo-wide pytest import breakage.
+
+## Implementation deviations from design
+
+- **`breadcrumbs` `default_rescale`**: mergekit's `BreadcrumbsMethod` has
+  `default_rescale=False` (confirmed via `merge_methods/registry.py:69`), not `True` as
+  listed in the placeholder. The implementation uses `getattr(method, "default_rescale", False)`
+  so it inherits the correct value.
+- **No separate memory doc** for `lora-merger-factored-strength-squaring` — that concept is
+  already documented inline in this doc (§ Related prior work, § Decision summary) and the
+  squaring-trap no longer applies to the GTA family since they now merge full deltas in
+  `src/merge/gta.py` and refactor via SVD.
