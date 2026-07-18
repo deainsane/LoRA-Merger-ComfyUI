@@ -1,6 +1,6 @@
 import logging
 
-from .blocks import apply_selection, build_klein_definition, build_krea2_definition
+from .blocks import build_block_selection_dict, build_klein_definition, build_krea2_definition
 
 CATEGORY = "LoRA PowerMerge"
 _FLOAT = {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.01}
@@ -66,15 +66,14 @@ class BlockSelector:
     RETURN_NAMES = ("block_selection",)
     FUNCTION = "select"
     CATEGORY = CATEGORY
-    DESCRIPTION = ("Selects per-block weights for the LoRA at 'index' in the LoRAStack using "
-                   "the given BlockDefinition. Chain block_selection outputs to weight multiple "
-                   "LoRAs. Feed the result into PM LoRA Stack Decompose.")
+    DESCRIPTION = ("Outputs a block selection config for the LoRA at 'index' in the LoRAStack. "
+                   "Chain block_selection outputs to weight multiple LoRAs. "
+                   "Feed the result into PM LoRA Stack Decompose.")
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "lora_stack": ("LoRAStack",),
                 "block_definition": ("BlockDefinition",),
                 "index": ("INT", {"default": 0, "min": 0, "max": 1000,
                                   "tooltip": "Which LoRA in the stack (0-based) to weight."}),
@@ -84,9 +83,8 @@ class BlockSelector:
             },
         }
 
-    def select(self, lora_stack, block_definition, index, block_selection=None):
-        keys_by_name = {name: list(key_dict.keys()) for name, key_dict in lora_stack.items()}
-        result = apply_selection(keys_by_name, block_definition, index, block_selection)
+    def select(self, block_definition, index, block_selection=None):
+        result = build_block_selection_dict(block_selection, index, block_definition)
         logging.info(f"[PM Block Selector] index {index}: selection now covers "
-                     f"{len(result)} LoRA(s).")
+                     f"{len(result['configs'])} LoRA(s).")
         return (result,)
