@@ -13,6 +13,8 @@ from mergekit.common import ModelReference, ImmutableMap, ModelPath
 from mergekit.io.tasks import GatherTensors
 
 from .architectures.sd_lora import weights_as_tuple
+from .merge.gta import gta_merge, GTA_MODES
+from .merge.lora_refactor import merged_delta_to_lora
 
 # Import merge module components
 from .merge import (
@@ -242,6 +244,46 @@ Outputs:
                 logging.debug(f"Key {key}: up_tensors[0] shape = {up_tensors[0].shape}")
             if len(down_tensors) > 0:
                 logging.debug(f"Key {key}: down_tensors[0] shape = {down_tensors[0].shape}")
+
+            mode = method_args.get('mode')
+            is_gta = (not is_clip) and (mode in GTA_MODES)
+
+            if is_gta:
+                deltas = []
+                for (u, d, a) in lora_key_tuples.values():
+                    u = u.to(device=device, dtype=torch.float32)
+                    d = d.to(device=device, dtype=torch.float32)
+                    rank = u.shape[1]
+                    scale = (float(a) / rank) if a is not None else 1.0
+                    if u.dim() == 4:
+                        u2 = u.reshape(u.shape[0], -1)
+                        d2 = d.reshape(d.shape[0], -1)
+                        deltas.append(scale * (u2 @ d2))
+                    else:
+                        deltas.append(scale * (u @ d))
+
+                merged = gta_merge(
+                    deltas,
+                    weights.to(torch.float32),
+                    mode=mode,
+                    normalize=method_args.get('normalize', True),
+                    density=method_args.get('density', 1.0),
+                    epsilon=method_args.get('epsilon', 0.0),
+                    gamma=method_args.get('gamma', 0.0),
+                    sign_consensus_algorithm=method_args.get('sign_consensus_algorithm', False),
+                    rescale_norm=method_args.get('rescale_norm', 'default'),
+                )
+
+                target_rank = max(u.shape[1] for (u, _, _) in lora_key_tuples.values())
+                up, down, alpha_out = merged_delta_to_lora(
+                    merged, target_rank=target_rank, energy=0.99, device=device)
+
+                if lambda_ < 1.0:
+                    up = up * lambda_
+                up = up.to(device='cpu', dtype=torch.float32)
+                down = down.to(device='cpu', dtype=torch.float32)
+                return key, (up, down, torch.tensor(float(alpha_out)))
+            # ---- non-GTA (existing factored path unchanged below) ----
 
             if is_clip:
                 # CLIP uses a normalized weighted average; the overall strength
