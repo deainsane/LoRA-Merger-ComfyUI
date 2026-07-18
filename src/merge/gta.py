@@ -126,14 +126,32 @@ _MODE_SPARSIFY = {
 }
 _MODE_ALWAYS_CONSENSUS = {"ties"}
 _MODE_NEVER_CONSENSUS = {"linear", "task_arithmetic"}
+_MODE_DEFAULT_RESCALE = {
+    "linear": False,
+    "task_arithmetic": False,
+    "ties": False,
+    "dare": False,
+    "della": True,
+    "breadcrumbs": False,
+}
 
 GTA_MODES = tuple(_MODE_SPARSIFY.keys())
+
+
+def resolve_rescale_norm(mode: str, rescale_norm: str) -> Optional[str]:
+    if rescale_norm == "default":
+        return "l1" if _MODE_DEFAULT_RESCALE.get(mode, False) else None
+    if rescale_norm == "none":
+        return None
+    if rescale_norm in _RESCALE:
+        return rescale_norm
+    raise ValueError(f"unknown rescale_norm {rescale_norm!r}")
 
 
 def gta_merge(deltas: List[torch.Tensor], weights: torch.Tensor, *, mode: str,
               normalize: bool = True, density: float = 1.0, epsilon: float = 0.0,
               gamma: float = 0.0, sign_consensus_algorithm: bool = False,
-              rescale_norm: Optional[str] = None) -> torch.Tensor:
+              rescale_norm: str = "default") -> torch.Tensor:
     """Merge a list of full LoRA deltas with GTA semantics on the delta itself.
 
     `weights` are the per-LoRA merge strengths (signed). Returns the merged delta."""
@@ -147,8 +165,9 @@ def gta_merge(deltas: List[torch.Tensor], weights: torch.Tensor, *, mode: str,
         consensus = bool(sign_consensus_algorithm)
 
     sp = _MODE_SPARSIFY[mode]
+    res = resolve_rescale_norm(mode, rescale_norm)
     sparse = [sparsify(d, sp, density=density, gamma=gamma, epsilon=epsilon,
-                       rescale_norm=rescale_norm) for d in deltas]
+                       rescale_norm=res) for d in deltas]
     stack = torch.stack(sparse, dim=0)
     return disjoint_merge(stack, weights.to(stack.dtype), sign_consensus=consensus,
                           normalize=normalize)

@@ -57,7 +57,14 @@ def test_ties_parity():
     _check("ties", "ties", normalize=False, density=0.6)
 
 
+def test_resolve_rescale_default_matches_mergekit():
+    assert gta.resolve_rescale_norm("della", "default") in (None, "l1")
+    assert gta.resolve_rescale_norm("ties", "none") is None
+    assert gta.resolve_rescale_norm("ties", "l2") == "l2"
+
+
 run([
     ("task_arithmetic_parity", test_task_arithmetic_parity),
     ("ties_parity", test_ties_parity),
+    ("resolve_rescale_default_matches_mergekit", test_resolve_rescale_default_matches_mergekit),
 ])
