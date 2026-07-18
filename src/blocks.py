@@ -135,3 +135,37 @@ def apply_block_weights(uda: Dict[str, Any],
             up = up * w
         out[lora_name] = (up, down, alpha)
     return out
+
+
+def build_krea2_definition(blocks_group_size: int, blocks_weights: str,
+                           txtfusion_layerwise: float, txtfusion_refiner: float,
+                           txtmlp: float) -> Dict[str, Any]:
+    """BlockDefinition for KREA2 LoRAs (unified diffusion_model.blocks.N stack + txtfusion/txtmlp)."""
+    return {
+        "model": "KREA2",
+        "categories": [
+            make_category("blocks", r"(?:^|\.)blocks\.(\d+)\.", blocks_group_size, blocks_weights),
+        ],
+        "pathways": [
+            {"name": "txtfusion.layerwise", "regex": r"txtfusion\.layerwise_blocks\.",
+             "weight": txtfusion_layerwise},
+            {"name": "txtfusion.refiner", "regex": r"txtfusion\.refiner_blocks\.",
+             "weight": txtfusion_refiner},
+            {"name": "txtmlp", "regex": r"(?:^|\.)txtmlp\.", "weight": txtmlp},
+        ],
+    }
+
+
+def build_klein_definition(double_blocks_group_size: int, double_blocks_weights: str,
+                           single_blocks_group_size: int, single_blocks_weights: str) -> Dict[str, Any]:
+    """BlockDefinition for FLUX.2-Klein LoRAs (double_blocks + single_blocks streams)."""
+    return {
+        "model": "FLUX.2-Klein",
+        "categories": [
+            make_category("double_blocks", r"(?:^|\.)double_blocks\.(\d+)\.",
+                          double_blocks_group_size, double_blocks_weights),
+            make_category("single_blocks", r"(?:^|\.)single_blocks\.(\d+)\.",
+                          single_blocks_group_size, single_blocks_weights),
+        ],
+        "pathways": [],
+    }

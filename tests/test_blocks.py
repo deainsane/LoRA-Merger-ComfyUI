@@ -183,3 +183,34 @@ class TestApplyBlockWeights:
         out = apply_block_weights(self._uda(), "other_key", {"loraA": {"k": 0.5}})
         up, _, _ = out["loraA"]
         assert torch.allclose(up, torch.ones(4, 2))
+
+
+from blocks import build_krea2_definition, build_klein_definition
+
+
+class TestBuildKrea2:
+    def test_shape_and_matching(self):
+        d = build_krea2_definition(blocks_group_size=5, blocks_weights="1,1,1,0.8,0.5,0",
+                                   txtfusion_layerwise=0.3, txtfusion_refiner=0.7, txtmlp=0.0)
+        assert d["model"] == "KREA2"
+        assert len(d["categories"]) == 1
+        assert {p["name"] for p in d["pathways"]} == {
+            "txtfusion.layerwise", "txtfusion.refiner", "txtmlp"}
+        # end-to-end sanity through key_weight
+        assert key_weight("diffusion_model.blocks.17.attn.wq.weight", d) == 0.8
+        assert key_weight("diffusion_model.txtfusion.refiner_blocks.0.mlp.up.weight", d) == 0.7
+
+
+class TestBuildKlein:
+    def test_shape_and_matching(self):
+        d = build_klein_definition(double_blocks_group_size=1, double_blocks_weights="1,0.5",
+                                   single_blocks_group_size=5, single_blocks_weights="1,1,0")
+        assert d["model"] == "FLUX.2-Klein"
+        assert {c["name"] for c in d["categories"]} == {"double_blocks", "single_blocks"}
+        assert d["pathways"] == []
+        # double_blocks group_size 1 -> block 1 is group 1 -> 0.5
+        assert key_weight("diffusion_model.double_blocks.1.img_attn.qkv.weight", d) == 0.5
+        # single_blocks group_size 5 -> block 12 is group 2 -> 0.0
+        assert key_weight("diffusion_model.single_blocks.12.linear1.weight", d) == 0.0
+        # 'single_blocks' must not be matched by a 'double_blocks' regex and vice-versa
+        assert key_weight("diffusion_model.single_blocks.0.linear1.weight", d) == 1.0
