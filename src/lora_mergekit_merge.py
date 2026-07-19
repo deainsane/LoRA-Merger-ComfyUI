@@ -372,7 +372,18 @@ Outputs:
         update_frequency = max(1, len(keys_to_process) // 100)  # Update at most 100 times
         completed_count = 0
 
-        with ThreadPoolExecutor(max_workers=8) as executor:
+        # The GTA delta-space path materializes full dense deltas (hundreds of MB
+        # each for large FLUX layers); running 8 concurrently multiplies peak VRAM
+        # ~8x and exhausts an 8 GB card with a resident model (OOM, or a hard
+        # segfault under the quantized-model CUDA context). Serialize it on CUDA --
+        # GPU-serial is only ~11 s for 256 keys. The light non-GTA factored path
+        # keeps the 8-way pool.
+        is_gta = method_args.get('mode') in GTA_MODES
+        n_workers = 1 if (is_gta and getattr(device, "type", device) == "cuda") else 8
+        logging.info(f"Merging with {n_workers} worker(s) "
+                     f"(mode={method_args.get('mode')}, device={device})")
+
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
             # distribute the work across available devices
             futures = {executor.submit(process_key, key): key for key in keys_to_process}
 
