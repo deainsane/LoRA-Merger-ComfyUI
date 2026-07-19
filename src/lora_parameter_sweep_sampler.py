@@ -363,7 +363,8 @@ class LoRAParameterSweepSampler:
                     strengths=context['strengths'],
                     lambda_=context['lambda_'],
                     device=context['device'],
-                    dtype=context['dtype']
+                    dtype=context['dtype'],
+                    refactor_method=context.get('refactor_method', 'energy_rSVD')
                 )
 
                 # Apply merged LoRA to model
@@ -419,7 +420,8 @@ class LoRAParameterSweepSampler:
                     strengths=context['strengths'],
                     lambda_=context['lambda_'],
                     device=context['device'],
-                    dtype=context['dtype']
+                    dtype=context['dtype'],
+                    refactor_method=context.get('refactor_method', 'energy_rSVD')
                 )
 
                 # Apply merged LoRA to model

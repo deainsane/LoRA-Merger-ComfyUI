@@ -83,6 +83,21 @@ class LoraMergerMergekit:
                 }),
                 "device": (["cuda", "cpu"],),
                 "dtype": (["float16", "bfloat16", "float32"],),
+                "refactor_method": (
+                    ["energy_rSVD", "rSVD"],
+                    {
+                        "default": "energy_rSVD",
+                        "tooltip": (
+                            "How the merged dense delta is decomposed back into a LoRA "
+                            "(applies to the GTA family: linear, task_arithmetic, ties, "
+                            "dare, della, breadcrumbs).\n"
+                            "'energy_rSVD': randomized SVD with dynamic rank chosen to "
+                            "retain 99% of the delta's energy (recommended).\n"
+                            "'rSVD': randomized SVD at the fixed max input rank.\n"
+                            "Both avoid the heavy/fragile full-SVD path."
+                        ),
+                    },
+                ),
             },
         }
 
@@ -113,7 +128,8 @@ Outputs:
                       lambda_: float = 1.0,
                       spectral_norm_scale: float = 0.0,
                       merge_clip: bool = True,
-                      device=None, dtype=None):
+                      device=None, dtype=None,
+                      refactor_method: str = "energy_rSVD"):
 
         if components is None:
             raise Exception("No components provided for merging.")
@@ -135,7 +151,7 @@ Outputs:
         # Adjust components to match the method requirements
         merge = self.merge(method=merge_method, method_args=method_args, lambda_=lambda_,
                            spectral_norm_scale=spectral_norm_scale, merge_clip=merge_clip,
-                           device=device, dtype=dtype)
+                           device=device, dtype=dtype, refactor_method=refactor_method)
         # Clean up VRAM
         torch.cuda.empty_cache()
 
@@ -146,12 +162,17 @@ Outputs:
             "strengths": strengths,
             "lambda_": lambda_,
             "device": device,
-            "dtype": dtype
+            "dtype": dtype,
+            "refactor_method": refactor_method
         }
 
         return merge + (merge_context,)
 
-    def merge(self, method: MergeMethod, method_args, lambda_, spectral_norm_scale, merge_clip, device, dtype):
+    def merge(self, method: MergeMethod, method_args, lambda_, spectral_norm_scale, merge_clip, device, dtype,
+              refactor_method: str = "energy_rSVD"):
+        # Map the refactor widget choice to the randomized-SVD energy setting:
+        # energy_rSVD -> dynamic rank at 99% energy; rSVD -> fixed max input rank.
+        refactor_energy = 0.99 if refactor_method == "energy_rSVD" else None
         # Separate CLIP and UNet layers
         all_clip_keys = [k for k in self.components.keys() if is_clip_layer(k)]
         all_unet_keys = [k for k in self.components.keys() if not is_clip_layer(k)]
@@ -276,7 +297,7 @@ Outputs:
 
                 target_rank = max(u.shape[1] for (u, _, _) in lora_key_tuples.values())
                 up, down, alpha_out = merged_delta_to_lora(
-                    merged, target_rank=target_rank, energy=0.99, device=device)
+                    merged, target_rank=target_rank, energy=refactor_energy, device=device)
 
                 if lambda_ < 1.0:
                     up = up * lambda_
