@@ -74,6 +74,12 @@ def _bernoulli(t, density, rescale_norm):
     return _rescaled_masked(t, mask, rescale_norm)
 
 
+# Rows above this are processed in blocks (below, in one shot). The whole-tensor
+# path is kept for small tensors so it stays bit-for-bit identical to mergekit's
+# della (same bernoulli RNG order) -- the parity unit test relies on that.
+_DELLA_CHUNK_ROWS = 4096
+
+
 def _della_magprune(t, density, epsilon, rescale_norm):
     if density >= 1:
         return t
@@ -85,6 +91,17 @@ def _della_magprune(t, density, epsilon, rescale_norm):
     x = t
     if x.dim() < 2:
         x = x.unsqueeze(0)
+    if x.shape[0] <= _DELLA_CHUNK_ROWS:
+        res = _della_whole(x, density, epsilon, rescale_norm)
+    else:
+        res = _della_chunked(x, density, epsilon, rescale_norm)
+    return res.reshape(orig_shape)
+
+
+def _della_whole(x, density, epsilon, rescale_norm):
+    """Original single-shot della: bit-for-bit matches mergekit for a given RNG
+    seed. Materializes several full-size temporaries (two argsorts etc.), so it
+    is only used for tensors small enough not to matter."""
     mags = x.abs()
     sorted_idx = torch.argsort(mags, dim=1, descending=False)
     ranks = sorted_idx.argsort(dim=1).to(torch.float32) + 1
@@ -94,7 +111,54 @@ def _della_magprune(t, density, epsilon, rescale_norm):
     probs = (density - epsilon) + rank_norm * 2 * epsilon
     mask = torch.bernoulli(probs).to(torch.float32)
     res = _rescaled_masked(x.to(torch.float32), mask, rescale_norm)
-    return res.to(t.dtype).reshape(orig_shape)
+    return res.to(x.dtype)
+
+
+def _norm_value(t: torch.Tensor, norm: Optional[str]):
+    """Scalar norm used for global rescale, or None if no rescale applies."""
+    if not norm or norm == "none":
+        return None
+    if norm == "l1":
+        return t.abs().sum()
+    if norm == "l2":
+        return t.norm()
+    if norm == "linf":
+        return t.abs().max()
+    raise ValueError(f"unknown rescale_norm {norm!r}")
+
+
+def _della_chunked(x, density, epsilon, rescale_norm, chunk_rows=_DELLA_CHUNK_ROWS):
+    """Memory-frugal della for large layers (e.g. FLUX [21504, 3072]).
+
+    della's ranking is per-row (``argsort(dim=1)``), so rows are independent and
+    processing them in blocks is exact -- only the bernoulli draw order changes,
+    and della is stochastic pruning anyway. The whole-tensor path peaks at ~11x
+    the delta (two full-layer int64 argsorts + a stack of fp32 temporaries); this
+    keeps every temporary to a single ``chunk_rows`` block, so peak is a small
+    constant regardless of layer size. The mask is applied in place; the global
+    rescale (l1/l2/linf) is computed across the whole tensor to match semantics."""
+    rows, cols = x.shape
+    in_place = x.dtype == torch.float32
+    out = x if in_place else x.to(torch.float32)  # in-place on fp32 input; else one copy
+    before = _norm_value(out, rescale_norm)        # from original values, pre-mask
+    denom = float(cols - 1) if cols > 1 else 1.0
+    two_eps = 2.0 * epsilon
+    base = density - epsilon
+    for lo in range(0, rows, chunk_rows):
+        hi = min(lo + chunk_rows, rows)
+        blk = out[lo:hi]                            # view into out
+        sorted_idx = torch.argsort(blk.abs(), dim=1, descending=False)
+        ranks = sorted_idx.argsort(dim=1)          # 0..cols-1 per row
+        del sorted_idx
+        probs = base + (ranks.to(torch.float32) / denom) * two_eps
+        del ranks
+        blk.mul_(torch.bernoulli(probs))           # mask in place
+        del probs
+    if before is not None:
+        after = _norm_value(out, rescale_norm)
+        if after >= 1e-7:
+            out.mul_(before / after)
+    return out.to(x.dtype)
 
 
 def sparsify(tensor: torch.Tensor, method: Optional[str], *, density: float = 1.0,
