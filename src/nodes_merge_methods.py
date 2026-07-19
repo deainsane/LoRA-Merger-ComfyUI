@@ -1,44 +1,6 @@
 from .merge import BaseMergeMethodNode
 
 
-class LinearMergeMethod(BaseMergeMethodNode):
-    """
-    Linear merge method node.
-
-    Concept: Computes a simple weighted average of the parameters from the input models.
-    This is one of the most basic and widely used merging techniques.
-
-    Use Cases:
-    - Averaging multiple checkpoints of the same fine-tuning run ("model soups")
-    - Combining models with very similar architectures and training data
-    - Simple ensemble-like behavior in a single model
-
-    Inputs: Takes 2 or more models. No base_model is typically used.
-
-    Key Parameters:
-    - weight (per-model): The contribution of each model to the average
-    - normalize (global): If true (default), weights are normalized to sum to 1
-    """
-
-    METHOD_NAME = "linear"
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "average_weights": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "ON: divide by the per-element sum of contributing weights — a weighted "
-                               "AVERAGE, so per-LoRA strengths act as ratios (two LoRAs at strength 1.0 "
-                               "each land at ~50%). OFF: additive SUM, so strengths act as gains and "
-                               "stacked LoRAs keep full magnitude. Turn OFF if the merge feels too weak.",
-                }),
-            },
-        }
-
-    def get_settings(self, average_weights: bool = True):
-        return {"normalize": average_weights}
-
-
 class SCEMergeMethod(BaseMergeMethodNode):
     """
     SCE (Select, Calculate, Erase) merge method node.

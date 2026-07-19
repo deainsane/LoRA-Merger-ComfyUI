@@ -12,7 +12,7 @@ from .src.lora_save import LoraSave
 from .src.lora_stack_sampler import LoRAStackSampler
 from .src.nodes_lora_modifier import LoRAModifier
 from .src.nodes_merge_methods import TaskArithmeticMergeMethod, NearSwapMergeMethod, SCEMergeMethod, BreadcrumbsMergeMethod, \
-    TIESMergeMethod, DAREMergeMethod, DELLAMergeMethod, SLERPMergeMethod, LinearMergeMethod, NuSlerpMergeMethod, \
+    TIESMergeMethod, DAREMergeMethod, DELLAMergeMethod, SLERPMergeMethod, NuSlerpMergeMethod, \
     KArcherMergeMethod
 
 version_code = [2, 2, 4]
@@ -39,7 +39,6 @@ NODE_CLASS_MAPPINGS = {
     "PM NuSlerp (Mergekit)": NuSlerpMergeMethod,
     "PM NearSwap (Mergekit)": NearSwapMergeMethod,
 
-    "PM Linear (Mergekit)": LinearMergeMethod,
     "PM SCE (Mergekit)": SCEMergeMethod,
     "PM KArcher (Mergekit)": KArcherMergeMethod,
 
@@ -82,7 +81,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     # GTA family: UNet path runs our own gta.py, so drop the "(Mergekit)" label.
     # NOTE: display keys must match NODE_CLASS_MAPPINGS exactly ("Ties"/"Dare",
     # not "TIES"/"DARE") — the old uppercase keys were dead and never applied.
-    "PM Linear (Mergekit)": "PM Linear",
     "PM Task Arithmetic (Mergekit)": "PM Task Arithmetic",
     "PM Ties (Mergekit)": "PM TIES",
     "PM Dare (Mergekit)": "PM DARE",

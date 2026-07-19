@@ -21,7 +21,6 @@ from LoRA_Merger_ComfyUI_test.src import nodes_merge_methods as N
 from LoRA_Merger_ComfyUI_test.src.lora_mergekit_merge import LoraMergerMergekit
 
 EXPECTED_ORDER = {
-    "LinearMergeMethod": ["average_weights"],
     "TaskArithmeticMergeMethod": ["rescale_norm", "average_weights"],
     "TIESMergeMethod": ["rescale_norm", "average_weights", "density"],
     "DAREMergeMethod": ["sign_consensus", "rescale_norm", "density", "average_weights"],
