@@ -61,12 +61,12 @@ class LoraMergerMergekit:
                 "method": ("MergeMethod",),
                 "components": ("LoRATensors", {"tooltip": "The decomposed components of the LoRAs to be merged."}),
                 "strengths": ("LoRAWeights", {"tooltip": "The weights of the LoRAs to be merged."}),
-                "lambda_": ("FLOAT", {
+                "output_scale": ("FLOAT", {
                     "default": 1,
                     "min": 0,
                     "max": 1,
                     "step": 0.01,
-                    "tooltip": "Lambda value for scaling the merged model.",
+                    "tooltip": "Global scale (0-1) applied to the final merged result.",
                 }),
                 "spectral_norm_scale": ("FLOAT", {
                     "default": 0.0,
@@ -125,7 +125,7 @@ Outputs:
                       method: Dict = None,
                       components: LORA_TENSORS_BY_LAYER = None,
                       strengths: LORA_WEIGHTS = None,
-                      lambda_: float = 1.0,
+                      output_scale: float = 1.0,
                       spectral_norm_scale: float = 0.0,
                       merge_clip: bool = True,
                       device=None, dtype=None,
@@ -149,7 +149,7 @@ Outputs:
         self.validate_input(method_name=method['name'], method_args=method_args)
 
         # Adjust components to match the method requirements
-        merge = self.merge(method=merge_method, method_args=method_args, lambda_=lambda_,
+        merge = self.merge(method=merge_method, method_args=method_args, lambda_=output_scale,
                            spectral_norm_scale=spectral_norm_scale, merge_clip=merge_clip,
                            device=device, dtype=dtype, refactor_method=refactor_method)
         # Clean up VRAM
@@ -160,7 +160,7 @@ Outputs:
             "method": method,
             "components": components,
             "strengths": strengths,
-            "lambda_": lambda_,
+            "lambda_": output_scale,
             "device": device,
             "dtype": dtype,
             "refactor_method": refactor_method
