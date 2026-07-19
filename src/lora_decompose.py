@@ -73,8 +73,9 @@ class LoraDecompose:
                         "max": 128,
                         "tooltip": (
                             "Target LoRA rank after decomposition. "
-                            "-1 keeps the rank of the first LoRA. "
-                            "Lower values reduce model size and strength."
+                            "-1 = auto (keep the rank of the first LoRA in the stack). "
+                            "Set a positive value to force a rank; lower values reduce "
+                            "model size and strength."
                         ),
                     }
                 ),

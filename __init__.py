@@ -66,25 +66,28 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "PM KREA 2 Blocks": "PM KREA 2 Blocks",
     "PM FLUX.2.Klein Blocks": "PM FLUX.2.Klein Blocks",
 
-    "PM LoRA Merger (Mergekit)": "PM LoRA Merger (Mergekit)",
+    "PM LoRA Merger (Mergekit)": "PM LoRA Merger",
 
     "PM LoRA Block Sampler": "PM LoRA Block Sampler",
     "PM LoRA Stack Sampler": "PM LoRA Stack Sampler",
     "PM LoRA Parameter Sweep Sampler": "PM LoRA Parameter Sweep Sampler",
 
+    # Still genuinely mergekit-backed — keep the suffix.
     "PM Slerp (Mergekit)": "PM Slerp (Mergekit)",
     "PM NuSlerp (Mergekit)": "PM NuSlerp (Mergekit)",
     "PM NearSwap (Mergekit)": "PM NearSwap (Mergekit)",
-
-    "PM Linear (Mergekit)": "PM Linear (Mergekit)",
     "PM SCE (Mergekit)": "PM SCE (Mergekit)",
     "PM KArcher (Mergekit)": "PM KArcher (Mergekit)",
 
-    "PM Task Arithmetic (Mergekit)": "PM Task Arithmetic (Mergekit)",
-    "PM TIES (Mergekit)": "PM TIES (Mergekit)",
-    "PM DARE (Mergekit)": "PM DARE (Mergekit)",
-    "PM Breadcrumbs (Mergekit)": "PM Breadcrumbs (Mergekit)",
-    "PM Della (Mergekit)": "PM Della (Mergekit)",
+    # GTA family: UNet path runs our own gta.py, so drop the "(Mergekit)" label.
+    # NOTE: display keys must match NODE_CLASS_MAPPINGS exactly ("Ties"/"Dare",
+    # not "TIES"/"DARE") — the old uppercase keys were dead and never applied.
+    "PM Linear (Mergekit)": "PM Linear",
+    "PM Task Arithmetic (Mergekit)": "PM Task Arithmetic",
+    "PM Ties (Mergekit)": "PM TIES",
+    "PM Dare (Mergekit)": "PM DARE",
+    "PM Breadcrumbs (Mergekit)": "PM Breadcrumbs",
+    "PM Della (Mergekit)": "PM Della",
 
     "PM LoRA Modifier": "PM LoRA Modifier",
 

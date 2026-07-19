@@ -27,7 +27,10 @@ class LinearMergeMethod(BaseMergeMethodNode):
             "required": {
                 "normalize": ("BOOLEAN", {
                     "default": True,
-                    "tooltip": "If true, the weights of all models contributing to a tensor will be normalized. Default behavior.",
+                    "tooltip": "ON: divide by the per-element sum of contributing weights — a weighted "
+                               "AVERAGE, so per-LoRA strengths act as ratios (two LoRAs at strength 1.0 "
+                               "each land at ~50%). OFF: additive SUM, so strengths act as gains and "
+                               "stacked LoRAs keep full magnitude. Turn OFF if the merge feels too weak.",
                 }),
             },
         }
@@ -114,7 +117,10 @@ class TaskArithmeticMergeMethod:
                                   "• none: No rescaling (may reduce merge strength)"}),
                 "normalize": ("BOOLEAN", {
                     "default": True,
-                    "tooltip": "If true, the weights of all models contributing to a tensor will be normalized. Default behavior.",
+                    "tooltip": "ON: divide by the per-element sum of contributing weights — a weighted "
+                               "AVERAGE, so per-LoRA strengths act as ratios (two LoRAs at strength 1.0 "
+                               "each land at ~50%). OFF: additive SUM, so strengths act as gains and "
+                               "stacked LoRAs keep full magnitude. Turn OFF if the merge feels too weak.",
                 }),
             },
         }
@@ -162,7 +168,10 @@ class TIESMergeMethod:
                                   "• none: No rescaling (may reduce merge strength)"}),
                 "normalize": ("BOOLEAN", {
                     "default": True,
-                    "tooltip": "If true, the weights of all models contributing to a tensor will be normalized. Default behavior.",
+                    "tooltip": "ON: divide by the per-element sum of contributing weights — a weighted "
+                               "AVERAGE, so per-LoRA strengths act as ratios (two LoRAs at strength 1.0 "
+                               "each land at ~50%). OFF: additive SUM, so strengths act as gains and "
+                               "stacked LoRAs keep full magnitude. Turn OFF if the merge feels too weak.",
                 }),
                 "density": ("FLOAT", {
                     "default": .9,
@@ -211,7 +220,10 @@ class BreadcrumbsMergeMethod:
             "required": {
                 "ties": ("BOOLEAN", {
                     "default": False,
-                    "tooltip": "Use sign consensus algorithm of ties algorithm.",
+                    "tooltip": "TIES sign consensus. ON: elect one sign per weight element "
+                               "(majority vote across the LoRAs) and keep only contributions that "
+                               "agree with it — cancels conflicting edits between LoRAs. "
+                               "OFF: plain weighted combine (the '_linear' variant, no sign vote).",
                 }),
                 "rescale_norm": (["default", "l1", "l2", "linf", "none"],
                                  {"default": "default", "tooltip": "Rescaling strategy:\n"
@@ -236,8 +248,10 @@ class BreadcrumbsMergeMethod:
                 }),
                 "normalize": ("BOOLEAN", {
                     "default": False,
-                    "tooltip": "If true, the weights of all models contributing to a tensor will be normalized. "
-                               "Default behavior.",
+                    "tooltip": "ON: divide by the per-element sum of contributing weights — a weighted "
+                               "AVERAGE, so per-LoRA strengths act as ratios (two LoRAs at strength 1.0 "
+                               "each land at ~50%). OFF: additive SUM, so strengths act as gains and "
+                               "stacked LoRAs keep full magnitude. Turn OFF if the merge feels too weak.",
                 }),
             },
         }
@@ -320,7 +334,10 @@ class DAREMergeMethod:
             "required": {
                 "ties": ("BOOLEAN", {
                     "default": False,
-                    "tooltip": "Use sign consensus algorithm of ties algorithm.",
+                    "tooltip": "TIES sign consensus. ON: elect one sign per weight element "
+                               "(majority vote across the LoRAs) and keep only contributions that "
+                               "agree with it — cancels conflicting edits between LoRAs. "
+                               "OFF: plain weighted combine (the '_linear' variant, no sign vote).",
                 }),
                 "rescale_norm": (["default", "l1", "l2", "linf", "none"],
                                  {"default": "default", "tooltip": "Rescaling strategy:\n"
@@ -338,7 +355,10 @@ class DAREMergeMethod:
                 }),
                 "normalize": ("BOOLEAN", {
                     "default": True,
-                    "tooltip": "If true, the weights of all models contributing to a tensor will be normalized. Default behavior.",
+                    "tooltip": "ON: divide by the per-element sum of contributing weights — a weighted "
+                               "AVERAGE, so per-LoRA strengths act as ratios (two LoRAs at strength 1.0 "
+                               "each land at ~50%). OFF: additive SUM, so strengths act as gains and "
+                               "stacked LoRAs keep full magnitude. Turn OFF if the merge feels too weak.",
                 }),
             },
         }
@@ -386,7 +406,10 @@ class DELLAMergeMethod:
             "required": {
                 "ties": ("BOOLEAN", {
                     "default": False,
-                    "tooltip": "Use sign consensus algorithm of ties algorithm.",
+                    "tooltip": "TIES sign consensus. ON: elect one sign per weight element "
+                               "(majority vote across the LoRAs) and keep only contributions that "
+                               "agree with it — cancels conflicting edits between LoRAs. "
+                               "OFF: plain weighted combine (the '_linear' variant, no sign vote).",
                 }),
                 "rescale_norm": (["default", "l1", "l2", "linf", "none"],
                                  {"default": "default", "tooltip": "Rescaling strategy:\n"
@@ -412,7 +435,10 @@ class DELLAMergeMethod:
                 }),
                 "normalize": ("BOOLEAN", {
                     "default": True,
-                    "tooltip": "If true, the weights of all models contributing to a tensor will be normalized. Default behavior.",
+                    "tooltip": "ON: divide by the per-element sum of contributing weights — a weighted "
+                               "AVERAGE, so per-LoRA strengths act as ratios (two LoRAs at strength 1.0 "
+                               "each land at ~50%). OFF: additive SUM, so strengths act as gains and "
+                               "stacked LoRAs keep full magnitude. Turn OFF if the merge feels too weak.",
                 }),
             },
         }
