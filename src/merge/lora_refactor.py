@@ -1,90 +1,81 @@
-"""Refactor a merged full delta back into a LoRA (up, down, alpha) via SVD.
+"""Refactor a merged full delta back into a LoRA (up, down, alpha).
 
-Wraps the existing SVD framework (utility.perform_lora_svd) with energy-based
-dynamic rank selection. Imports `utility` (only usable inside the ComfyUI
-runtime / with src on sys.path), so it is kept separate from the dependency-free
-gta.py."""
+Uses randomized SVD (`torch.svd_lowrank`) with energy-based dynamic rank instead
+of a full `torch.linalg.svd`. Full SVD computes the entire spectrum plus a large
+cuSOLVER/LAPACK workspace (~190 MB and ~2.9 s for a 3072x3072 layer here); the
+randomized path computes only the top ~rank components (~6 MB, ~4 ms). Run across
+the merge thread-pool under a resident diffusion model, the full-SVD path is both
+a VRAM hog and the fragile cuSOLVER driver that crashes under pressure — the
+randomized path avoids both.
+
+Pure torch, no intra-package imports, so it stays loadable by file path in the
+repo's broken test env (mirrors gta.py)."""
 from typing import Optional, Tuple
-import importlib.util
-import os
-import sys
-import types
 
 import torch
 
-_REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_SRC = os.path.join(_REPO, "src")
-
-
-def _setup_src_pkg():
-    """Stub src/ and merge/ packages so utility.py's relative imports resolve."""
-    class LoRAAdapterStub:
-        def __init__(self, *args, **kwargs):
-            self.state_dict = {}
-
-    class LoRAAdapterModuleStub:
-        LoRAAdapter = LoRAAdapterStub
-
-    comfy_stub = types.ModuleType("comfy")
-    comfy_weight_adapter_stub = types.ModuleType("comfy.weight_adapter")
-    comfy_weight_adapter_stub.LoRAAdapter = LoRAAdapterStub
-    comfy_stub.weight_adapter = comfy_weight_adapter_stub
-    sys.modules.setdefault("comfy", comfy_stub)
-    sys.modules.setdefault("comfy.weight_adapter", comfy_weight_adapter_stub)
-
-    stub_types = types.ModuleType("types")
-    from typing import Dict, Tuple, Union
-    stub_types.LORA_TENSORS = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-    stub_types.DeviceType = Union[torch.device, str]
-    stub_types.DtypeType = Union[torch.dtype, str]
-    stub_types.MIN_SINGULAR_VALUE = 1e-6
-    stub_mergedelta = types.ModuleType("merge.delta")
-    stub_merge = types.ModuleType("merge")
-    stub_merge.delta = stub_mergedelta
-    stub_mergedelta.__package__ = "merge"
-    stub_merge.__path__ = [os.path.join(_SRC, "merge")]
-    stub_merge.__package__ = "merge"
-    stub_src = types.ModuleType("src")
-    stub_src.__path__ = [_SRC]
-    stub_src.__package__ = "src"
-    for n, m in [("types", stub_types), ("src", stub_src), ("merge", stub_merge),
-                 ("merge.delta", stub_mergedelta)]:
-        sys.modules.setdefault(n, m)
-
-
-def _load_perform_lora_svd():
-    _setup_src_pkg()
-    util_path = os.path.join(_SRC, "utility.py")
-    spec = importlib.util.spec_from_file_location("src.utility", util_path)
-    util = importlib.util.module_from_spec(spec)
-    util.__name__ = "src.utility"
-    util.__package__ = "src"
-    sys.modules["src.utility"] = util
-    spec.loader.exec_module(util)
-    return util.perform_lora_svd
-
-
-try:
-    from ..utility import perform_lora_svd
-except ImportError:
-    perform_lora_svd = _load_perform_lora_svd()
-
 
 def merged_delta_to_lora(delta: torch.Tensor, target_rank: int, *,
-                         energy: Optional[float] = 0.99, device: str = "cpu",
-                         dtype: torch.dtype = torch.float32
+                         energy: Optional[float] = 0.99, device="cpu",
+                         dtype: torch.dtype = torch.float32,
+                         oversample: int = 8, niter: int = 2
                          ) -> Tuple[torch.Tensor, torch.Tensor, float]:
-    """Decompose `delta` into (up, down, alpha).
+    """Decompose ``delta`` into ``(up, down, alpha)`` via randomized SVD.
 
-    target_rank: hard cap on output rank (e.g. max input rank).
-    energy: cumulative singular-value retention for dynamic rank (None = fixed rank).
+    The reconstruction convention matches the rest of the node: the effective
+    LoRA delta is ``(alpha / rank) * (up @ down)``, and with ``alpha == rank``
+    that is exactly ``up @ down`` (the rank-``r`` approximation of ``delta``).
+
+    Args:
+        delta: merged full delta, 2D ``[out, in]`` (4D conv is flattened).
+        target_rank: hard cap on the output rank (e.g. max input LoRA rank).
+        energy: cumulative singular-value energy to retain, in ``(0, 1]``. The
+            rank is the smallest ``r <= target_rank`` reaching that fraction of
+            ``||delta||_F^2``. ``None`` uses ``target_rank`` directly.
+        oversample: extra components sampled for randomized-SVD accuracy.
+        niter: power iterations (1-2 is plenty for low-rank deltas).
     """
-    if energy is None:
-        up, down, alpha = perform_lora_svd(delta, target_rank=target_rank,
-                                           device=device, dtype=dtype, scale=1.0)
+    orig_shape = delta.shape
+    orig_dtype = delta.dtype
+    is_conv = delta.dim() == 4
+    if is_conv:
+        W = delta.reshape(orig_shape[0], -1)
     else:
-        up, down, alpha = perform_lora_svd(delta, target_rank=target_rank,
-                                           device=device, dtype=dtype, scale=1.0,
-                                           dynamic_method="sv_cumulative",
-                                           dynamic_param=energy)
+        W = delta
+    W = W.to(device=device, dtype=torch.float32)
+    out_f, in_f = W.shape
+
+    max_rank = min(out_f, in_f)
+    target_rank = max(1, min(int(target_rank), max_rank))
+
+    total_energy = W.pow(2).sum()
+    if total_energy <= 1e-12:  # all-zero delta: return a rank-1 zero LoRA
+        up = torch.zeros(out_f, 1, dtype=orig_dtype)
+        down = torch.zeros(1, in_f, dtype=orig_dtype)
+        if is_conv:
+            up = up.reshape(out_f, 1, 1, 1)
+            down = down.reshape(1, orig_shape[1], orig_shape[2], orig_shape[3])
+        return up, down, 1.0
+
+    q = min(target_rank + oversample, max_rank)
+    U, S, V = torch.svd_lowrank(W, q=q, niter=niter)  # S descending
+
+    if energy is not None:
+        cum = torch.cumsum(S.pow(2), dim=0) / total_energy
+        thresh = torch.tensor(float(energy), device=cum.device, dtype=cum.dtype)
+        r = int(torch.searchsorted(cum, thresh).item()) + 1
+        r = max(1, min(r, target_rank, S.numel()))
+    else:
+        r = min(target_rank, S.numel())
+
+    s_sqrt = S[:r].clamp_min(0).sqrt()
+    up = U[:, :r] * s_sqrt.unsqueeze(0)          # [out, r]
+    down = (V[:, :r] * s_sqrt.unsqueeze(0)).T    # [r, in]
+    alpha = float(r)                             # scale = 1 convention
+
+    if is_conv:
+        up = up.reshape(out_f, r, 1, 1)
+        down = down.reshape(r, orig_shape[1], orig_shape[2], orig_shape[3])
+    up = up.to(device="cpu", dtype=orig_dtype)
+    down = down.to(device="cpu", dtype=orig_dtype)
     return up, down, alpha
