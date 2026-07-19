@@ -5,9 +5,11 @@
 import importlib.util, os, sys, inspect, traceback
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PARENT = os.path.dirname(REPO)
+PARENT = os.path.dirname(REPO)            # .../custom_nodes
+COMFY_ROOT = os.path.dirname(PARENT)      # ComfyUI root, so `import comfy` resolves
 PKG = "LoRA_Merger_ComfyUI_test"
 
+sys.path.insert(0, COMFY_ROOT)            # lora_mergekit_merge imports comfy.*
 sys.path.insert(0, PARENT)
 spec = importlib.util.spec_from_file_location(
     PKG, os.path.join(REPO, "__init__.py"), submodule_search_locations=[REPO])
