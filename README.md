@@ -9,7 +9,8 @@ This is an enhanced fork of laksjdjf's [LoRA Merger](https://github.com/laksjdjf
 ## Features
 
 - **8+ Merge Algorithms**: Task Arithmetic, TIES, DARE, DELLA, Breadcrumbs, SLERP, and more
-- **Mergekit Integration**: Production-grade merge methods from Arcee AI's Mergekit library
+- **Native Delta-Space GTA**: The task-arithmetic family (Task Arithmetic, TIES, DARE, DELLA, Breadcrumbs) merges full dense deltas and refactors back into a LoRA via randomized SVD with dynamic rank — a self-contained implementation with VRAM bounded for large DiT/Flux layers
+- **Mergekit Integration**: SLERP, NuSLERP, NearSwap, SCE, and Karcher come from Arcee AI's Mergekit library
 - **6 Architecture Support**: SD1.5, SDXL, DiT, Flux, Wan 2.2, Qwen Image Edit, and zImage with automatic detection
 - **Spectral Norm Regularization**: Prevent layer dominance with advanced weight normalization
 - **SVD Support**: Full, randomized, and energy-based SVD decomposition with dynamic rank selection
@@ -42,7 +43,7 @@ pip install -r requirements.txt
 1. Stack LoRAs with **PM LoRA Stacker** or **PM LoRA Power Stacker**
 2. Decompose using **PM LoRA Stack Decompose**
 3. Choose a merge method (e.g., **PM TIES**, **PM DARE**)
-4. Merge with **PM LoRA Merger (Mergekit)**
+4. Merge with **PM LoRA Merger**
 5. Apply with **PM LoRA Apply** or save with **PM LoRA Save**
 
 ## Node Reference
@@ -105,8 +106,8 @@ Decompose LoRA stack into (up, down, alpha) tensor components for merging.
 **Outputs:**
 - `components`: LoRATensors (decomposed tensors by layer)
 
-#### PM LoRA Merger (Mergekit)
-Main merging node using Mergekit algorithms. Processes layers in parallel with thread-safe progress tracking.
+#### PM LoRA Merger
+Main merging node. Runs the native delta-space path for the GTA family and Mergekit for the rest. Processes layers in parallel with thread-safe progress tracking.
 
 ![pm-lora_merger.png](assets/pm-lora_merger.png)
 
@@ -114,15 +115,18 @@ Main merging node using Mergekit algorithms. Processes layers in parallel with t
 - `merge_method`: MergeMethod configuration from method nodes
 - `components`: Decomposed LoRATensors from decompose node
 - `strengths`: LoRAWeights from decompose node
-- `_lambda`: Final scaling factor (default: 1.0)
+- `output_scale`: Global scale (0-1) applied to the final merged result (default: 1.0)
+- `spectral_norm_scale`: Spectral-norm regularization target; 0 disables (default: 0.0)
+- `merge_clip`: Whether to merge CLIP (text-encoder) layers (default: True)
 - `device`: Processing device ("cpu", "cuda")
 - `dtype`: Computation precision ("float32", "float16", "bfloat16")
+- `refactor_method`: How the merged dense delta is decomposed back into a LoRA, for the GTA family only (`energy_rSVD` = randomized SVD with dynamic rank retaining 99% of the delta's energy, recommended; `rSVD` = randomized SVD at the fixed max input rank)
 
 **Features:**
-- **Parallel processing**: ThreadPoolExecutor with max_workers=8
+- **Delta-space GTA merge**: For the GTA family (Task Arithmetic, TIES, DARE, DELLA, Breadcrumbs) each UNet layer is merged as a full dense delta and refactored back into a LoRA via `refactor_method` — a native implementation, no Mergekit dependency on this path
+- **Device-aware parallelism**: ThreadPoolExecutor with up to 8 workers; GTA merges on CUDA run single-worker to bound peak VRAM (large DiT/Flux layers)
 - **Comprehensive validation**: Input structure, tensor shapes, strength presence
 - **Smart strength application**: Uses strength_model for UNet, strength_clip for CLIP layers
-- **Device-aware distribution**: Balances CPU and GPU workload
 
 **Output:**
 - Merged LoRA as LoRAAdapter state dictionary
@@ -152,43 +156,50 @@ Save merged LoRA to disk in standard format. This will also save the original cl
 
 Each method node configures algorithm-specific parameters. Connect to the `merge_method` input of **PM LoRA Merger**.
 
-#### PM Linear
-Simple weighted linear combination.
+The **GTA family** — Task Arithmetic, TIES, DARE, DELLA, Breadcrumbs — runs a native delta-space implementation (no Mergekit on this path) and shares three controls:
 
-**Parameters:**
-- `normalize` (bool): Normalize by number of LoRAs (default: True)
+- `sign_consensus` (bool): elect one sign per weight element by magnitude-weighted majority and keep only agreeing contributions (the `_ties` variant); off = plain weighted combine (`_linear`). Exposed on DARE/DELLA/Breadcrumbs (default False); always on for TIES; never for Task Arithmetic.
+- `average_weights` (bool, default **False**): OFF = additive **sum** (strengths act as gains — matches ComfyUI's native LoRA stacking). ON = weighted **average** (÷ sum of contributing weights; strengths act as ratios, so two LoRAs at 1.0 land at ~50%). Turn ON only to blend/interpolate.
+- `rescale_norm` (`default`/`l1`/`l2`/`linf`/`none`): restore a norm after sparsification.
+
+> Note: `sign_consensus` was formerly `ties`, `average_weights` was formerly `normalize`, and its default changed from ON to OFF. The `PM Linear` node was removed — it was identical to Task Arithmetic at defaults; use **PM Task Arithmetic**.
 
 #### PM TIES
-Task Arithmetic with Interference Elimination and Sign consensus.
+Trim, Elect Sign & Merge — magnitude-sparsify each delta, then sign consensus (always on).
 
 **Parameters:**
-- `density` (float): Fraction of values to keep (0.0-1.0, default: 0.9)
-- `normalize` (bool): Normalize merged result (default: True)
+- `density` (float, default 0.9): fraction of largest-magnitude weights to keep
+- `rescale_norm`, `average_weights` (default False)
 
 **Reference:** [TIES-Merging Paper](https://arxiv.org/abs/2306.01708)
 
 #### PM DARE
-Drop And REscale for efficient model merging.
+Drop And REscale — random (magnitude-agnostic) sparsification.
 
 **Parameters:**
-- `density` (float): Probability of keeping each parameter (default: 0.9)
-- `normalize` (bool): Normalize after rescaling (default: True)
+- `sign_consensus` (bool, default False)
+- `density` (float, default 0.85): probability of keeping each weight
+- `rescale_norm`, `average_weights` (default False)
 
 **Reference:** [DARE Paper](https://arxiv.org/abs/2311.03099)
 
-Depth-Enhanced Low-rank adaptation with Layer-wise Averaging.
+#### PM DELLA
+Magnitude-weighted **stochastic** pruning (a soft TIES): larger-magnitude weights are more likely kept.
 
 **Parameters:**
-- `density` (float): Layer density parameter (default: 0.9)
-- `epsilon` (float): Small value for numerical stability (default: 1e-8)
-- `lambda_factor` (float): Scaling factor (default: 1.0)
+- `sign_consensus` (bool, default False)
+- `density` (float, default 0.85)
+- `epsilon` (float, default 0.1): half-width of the keep-probability ramp (density ± epsilon by within-row magnitude rank)
+- `rescale_norm` (defaults to l1), `average_weights` (default False)
 
 #### PM Breadcrumbs
-Breadcrumb-based merging strategy.
+Keep the mid-magnitude band — drop both the smallest (noise) and the largest (outliers).
 
 **Parameters:**
-- `density` (float): Path density (default: 0.9)
-- `tie_method` ("sum" or "mean"): How to combine tied parameters
+- `sign_consensus` (bool, default False)
+- `density` (float, default 0.9): fraction retained in the middle band
+- `gamma` (float, default 0.1): fraction of largest-magnitude weights to drop
+- `rescale_norm`, `average_weights` (default False)
 
 #### PM SLERP
 Spherical Linear Interpolation for smooth model interpolation.
@@ -212,10 +223,11 @@ Karcher mean on the manifold (generalized SLERP for N models).
 - `tolerance` (float): Convergence threshold (default: 1e-6)
 
 #### PM Task Arithmetic
-Standard task vector arithmetic (delta merging).
+Plain weighted combine of task vectors (no trim, no sign vote). With `average_weights` off this reproduces how ComfyUI natively stacks LoRAs (`W + Σ strengthᵢ·Δᵢ`).
 
 **Parameters:**
-- `normalize` (bool): Normalize by number of models (default: False)
+- `rescale_norm` (`default`/`l1`/`l2`/`linf`/`none`)
+- `average_weights` (bool, default False)
 
 #### PM SCE (Selective Consensus Ensemble)
 Selective consensus with threshold-based parameter selection.
@@ -391,8 +403,8 @@ Systematically sweep through merge parameter values to find optimal settings vis
 - `sampler`: ComfyUI sampler to use
 - `sigmas`: Sigma schedule for noise levels
 - `latent_image`: Initial latent image to denoise
-- `merge_context`: MergeContext output from **PM LoRA Merger (Mergekit)** node
-- `parameter_name`: Name of the merge parameter to sweep (e.g., "t", "density", "normalize")
+- `merge_context`: MergeContext output from **PM LoRA Merger** node
+- `parameter_name`: Name of the merge parameter to sweep (e.g., "t", "density", "average_weights", "sign_consensus")
 - `parameter_values`: Parameter values to test (see formats below)
 - `parameter_name_2`: Optional second parameter for 2D sweeps (leave empty for 1D)
 - `parameter_values_2`: Second parameter values (same formats as parameter_values)
@@ -417,7 +429,7 @@ The `parameter_values` and `parameter_values_2` fields support multiple input fo
    - Tests a single parameter value
 
 5. **Boolean parameters**: Auto-detected
-   - If parameter is boolean (e.g., "normalize"), automatically uses [False, True]
+   - If parameter is boolean (e.g., "average_weights"), automatically uses [False, True]
    - `parameter_values` input is ignored for boolean parameters
 
 **Features:**
@@ -458,9 +470,9 @@ parameter_values: "0.5 - 0.95 : 0.15"
 
 **Boolean Parameter Testing:**
 ```
-parameter_name: "normalize"
+parameter_name: "average_weights"
 parameter_values: "" (ignored)
-→ Automatically tests [False, True] to compare normalized vs unnormalized
+→ Automatically tests [False, True] to compare additive sum vs weighted average
 ```
 
 **2D Parameter Sweep (Dual Mode):**
@@ -483,7 +495,7 @@ LoRA Stack → Decompose → Method Node (SLERP) → Merger (with MergeContext o
 ```
 
 **Notes:**
-- Use MergeContext output from **PM LoRA Merger (Mergekit)** instead of the LoRA output
+- Use MergeContext output from **PM LoRA Merger** instead of the LoRA output
 - Each parameter combination creates a new merge + sampling operation
 - Parameter names must match the merge method's settings (check method node inputs)
 - For invalid parameter names, the node provides a list of available parameters in the error message
