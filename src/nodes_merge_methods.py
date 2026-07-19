@@ -25,7 +25,7 @@ class LinearMergeMethod(BaseMergeMethodNode):
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "normalize": ("BOOLEAN", {
+                "average_weights": ("BOOLEAN", {
                     "default": True,
                     "tooltip": "ON: divide by the per-element sum of contributing weights — a weighted "
                                "AVERAGE, so per-LoRA strengths act as ratios (two LoRAs at strength 1.0 "
@@ -35,8 +35,8 @@ class LinearMergeMethod(BaseMergeMethodNode):
             },
         }
 
-    def get_settings(self, normalize: bool = True):
-        return {"normalize": normalize}
+    def get_settings(self, average_weights: bool = True):
+        return {"normalize": average_weights}
 
 
 class SCEMergeMethod(BaseMergeMethodNode):
@@ -115,7 +115,7 @@ class TaskArithmeticMergeMethod:
                                   "• l2: L2 norm preservation (precise, preserves Euclidean norm)\n"
                                   "• linf: L-infinity norm (preserves max absolute value, prevents amplification)\n"
                                   "• none: No rescaling (may reduce merge strength)"}),
-                "normalize": ("BOOLEAN", {
+                "average_weights": ("BOOLEAN", {
                     "default": True,
                     "tooltip": "ON: divide by the per-element sum of contributing weights — a weighted "
                                "AVERAGE, so per-LoRA strengths act as ratios (two LoRAs at strength 1.0 "
@@ -143,12 +143,12 @@ Key Parameters:
 - lambda (global): Scaling factor applied to the summed task vectors before adding back to the base. Default 1.0
 """
 
-    def get_method(self, rescale_norm: str = "default", normalize: bool = 0.5, ):
+    def get_method(self, rescale_norm: str = "default", average_weights: bool = 0.5, ):
         method_def = {
             "name": "task_arithmetic",
             "settings": {
                 "rescale_norm": rescale_norm,
-                "normalize": normalize,
+                "normalize": average_weights,
             }
         }
         return (method_def,)
@@ -166,7 +166,7 @@ class TIESMergeMethod:
                                   "• l2: L2 norm preservation (precise, preserves Euclidean norm)\n"
                                   "• linf: L-infinity norm (preserves max absolute value, prevents amplification)\n"
                                   "• none: No rescaling (may reduce merge strength)"}),
-                "normalize": ("BOOLEAN", {
+                "average_weights": ("BOOLEAN", {
                     "default": True,
                     "tooltip": "ON: divide by the per-element sum of contributing weights — a weighted "
                                "AVERAGE, so per-LoRA strengths act as ratios (two LoRAs at strength 1.0 "
@@ -201,12 +201,12 @@ class TIESMergeMethod:
     - lambda (global): As in Task Arithmetic
     """
 
-    def get_method(self, rescale_norm:str = "default", normalize: bool = True, density: float = 1):
+    def get_method(self, rescale_norm:str = "default", average_weights: bool = True, density: float = 1):
         method_def = {
             "name": "ties",
             "settings": {
                 "rescale_norm": rescale_norm,
-                "normalize": normalize,
+                "normalize": average_weights,
                 "density": density,
             }
         }
@@ -218,7 +218,7 @@ class BreadcrumbsMergeMethod:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "ties": ("BOOLEAN", {
+                "sign_consensus": ("BOOLEAN", {
                     "default": False,
                     "tooltip": "TIES sign consensus. ON: elect one sign per weight element "
                                "(majority vote across the LoRAs) and keep only contributions that "
@@ -246,7 +246,7 @@ class BreadcrumbsMergeMethod:
                     "step": 0.01,
                     "tooltip": "Fraction of largest magnitude differences to remove",
                 }),
-                "normalize": ("BOOLEAN", {
+                "average_weights": ("BOOLEAN", {
                     "default": False,
                     "tooltip": "ON: divide by the per-element sum of contributing weights — a weighted "
                                "AVERAGE, so per-LoRA strengths act as ratios (two LoRAs at strength 1.0 "
@@ -312,16 +312,16 @@ class BreadcrumbsMergeMethod:
         As in Task Arithmetic.
     """
 
-    def get_method(self, ties: bool = False, rescale_norm: str = "default", density: float = .9, gamma: float = .1,
-                   normalize: bool = False):
+    def get_method(self, sign_consensus: bool = False, rescale_norm: str = "default", density: float = .9, gamma: float = .1,
+                   average_weights: bool = False):
         method_def = {
             "name": "breadcrumbs",
             "settings": {
                 "rescale_norm": rescale_norm,
-                "normalize": normalize,
+                "normalize": average_weights,
                 "density": density,
                 "gamma": gamma,
-                "sign_consensus_algorithm": ties,
+                "sign_consensus_algorithm": sign_consensus,
             }
         }
         return (method_def,)
@@ -332,7 +332,7 @@ class DAREMergeMethod:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "ties": ("BOOLEAN", {
+                "sign_consensus": ("BOOLEAN", {
                     "default": False,
                     "tooltip": "TIES sign consensus. ON: elect one sign per weight element "
                                "(majority vote across the LoRAs) and keep only contributions that "
@@ -353,7 +353,7 @@ class DAREMergeMethod:
                     "step": 0.01,
                     "tooltip": "Fraction of weights to retain after random pruning.",
                 }),
-                "normalize": ("BOOLEAN", {
+                "average_weights": ("BOOLEAN", {
                     "default": True,
                     "tooltip": "ON: divide by the per-element sum of contributing weights — a weighted "
                                "AVERAGE, so per-LoRA strengths act as ratios (two LoRAs at strength 1.0 "
@@ -385,15 +385,15 @@ class DAREMergeMethod:
     - rescale (global, for dare_linear): If true (default), applies DARE's rescaling
     """
 
-    def get_method(self, ties: bool = False, rescale_norm: str = "default", density: float = .8,
-                   normalize: bool = True):
+    def get_method(self, sign_consensus: bool = False, rescale_norm: str = "default", density: float = .8,
+                   average_weights: bool = True):
         method_def = {
             "name": "dare",
             "settings": {
                 "rescale_norm": rescale_norm,
-                "normalize": normalize,
+                "normalize": average_weights,
                 "density": density,
-                "sign_consensus_algorithm": ties,
+                "sign_consensus_algorithm": sign_consensus,
             }
         }
         return (method_def,)
@@ -404,7 +404,7 @@ class DELLAMergeMethod:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "ties": ("BOOLEAN", {
+                "sign_consensus": ("BOOLEAN", {
                     "default": False,
                     "tooltip": "TIES sign consensus. ON: elect one sign per weight element "
                                "(majority vote across the LoRAs) and keep only contributions that "
@@ -433,7 +433,7 @@ class DELLAMergeMethod:
                     "tooltip": "Maximum change in drop probability based on magnitude. "
                                "Drop probabilities assigned will range from density - epsilon to density + epsilon.",
                 }),
-                "normalize": ("BOOLEAN", {
+                "average_weights": ("BOOLEAN", {
                     "default": True,
                     "tooltip": "ON: divide by the per-element sum of contributing weights — a weighted "
                                "AVERAGE, so per-LoRA strengths act as ratios (two LoRAs at strength 1.0 "
@@ -479,16 +479,16 @@ class DELLAMergeMethod:
     lambda (global): As in Task Arithmetic
     """
 
-    def get_method(self, ties: bool = False, rescale_norm: str = "default", density: float = 1, epsilon: float = .01,
-                   normalize: bool = True):
+    def get_method(self, sign_consensus: bool = False, rescale_norm: str = "default", density: float = 1, epsilon: float = .01,
+                   average_weights: bool = True):
         method_def = {
             "name": "della",
             "settings": {
                 "rescale_norm": rescale_norm,
-                "normalize": normalize,
+                "normalize": average_weights,
                 "density": density,
                 "epsilon": epsilon,
-                "sign_consensus_algorithm": ties,
+                "sign_consensus_algorithm": sign_consensus,
             }
         }
         return (method_def,)
