@@ -4,6 +4,15 @@
 **Status:** Implemented (2026-07-19)
 **Area:** `custom_nodes/LoRA-Merger-ComfyUI`
 
+**Post-implementation deviation (2026-07-19):** the merged-delta refactor uses **randomized
+SVD** (`torch.svd_lowrank`) with energy-based dynamic rank, **not** a full `torch.linalg.svd`
+via `perform_lora_svd`. Full SVD across the 8-worker merge pool under a resident diffusion
+model is the fragile, heavy path — ~190 MB workspace and ~2.9 s per 3072² layer through the
+cuSOLVER driver — and OOMs/segfaults under VRAM pressure. The randomized path computes only the
+top-r components: ~6 MB, ~4 ms, pure matmuls. The refactor algorithm is user-selectable via a
+new `refactor_method` widget on the merge node (`energy_rSVD` default, `rSVD`; full SVD
+intentionally not offered). See `src/merge/lora_refactor.py`.
+
 ## Problem
 
 The `normalize` option on the GTA-family merge nodes (TIES, DARE, DELLA, Breadcrumbs,
