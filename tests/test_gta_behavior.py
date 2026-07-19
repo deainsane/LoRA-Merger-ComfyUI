@@ -51,9 +51,9 @@ def test_style_plus_character_nonoverlap_keeps_strength():
 def test_normalize_does_not_collapse_as_1_over_n_squared():
     torch.manual_seed(0)
     deltas = [torch.randn(6, 6) for _ in range(4)]
+    avg = torch.stack(deltas).mean(0)  # snapshot: gta_merge consumes `deltas`
     merged = gta.gta_merge(deltas, torch.ones(4), mode="ties", density=1.0,
                            normalize=True)
-    avg = torch.stack(deltas).mean(0)
     assert merged.norm() > 0.5 * avg.norm()
 
 
