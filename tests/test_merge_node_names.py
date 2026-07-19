@@ -48,6 +48,14 @@ def test_settings_internal_keys_unchanged():
         assert s["sign_consensus_algorithm"] is True, f"{cls_name}: sign_consensus not wired"
 
 
+def test_average_weights_defaults_off():
+    # Default OFF matches ComfyUI's native additive LoRA stacking (sum, not average).
+    for cls_name in EXPECTED_ORDER:
+        cls = getattr(N, cls_name)
+        default = cls.INPUT_TYPES()["required"]["average_weights"][1]["default"]
+        assert default is False, f"{cls_name}: average_weights default {default!r} != False"
+
+
 def test_merger_output_scale():
     keys = list(LoraMergerMergekit.INPUT_TYPES()["required"].keys())
     expected = ["method", "components", "strengths", "output_scale",
@@ -62,6 +70,7 @@ def run():
     for name, fn in [
         ("input_types_renamed_same_order", test_input_types_renamed_same_order),
         ("settings_internal_keys_unchanged", test_settings_internal_keys_unchanged),
+        ("average_weights_defaults_off", test_average_weights_defaults_off),
         ("merger_output_scale", test_merger_output_scale),
     ]:
         try:
@@ -70,7 +79,7 @@ def run():
             failed += 1; print(f"FAIL {name}"); traceback.print_exc()
     if failed:
         print(f"\n{failed} FAILED"); sys.exit(1)
-    print("\nAll 3 passed")
+    print(f"\nAll 4 passed")
 
 
 run()

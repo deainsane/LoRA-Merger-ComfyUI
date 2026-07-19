@@ -78,11 +78,12 @@ class TaskArithmeticMergeMethod:
                                   "• linf: L-infinity norm (preserves max absolute value, prevents amplification)\n"
                                   "• none: No rescaling (may reduce merge strength)"}),
                 "average_weights": ("BOOLEAN", {
-                    "default": True,
+                    "default": False,
                     "tooltip": "ON: divide by the per-element sum of contributing weights — a weighted "
                                "AVERAGE, so per-LoRA strengths act as ratios (two LoRAs at strength 1.0 "
                                "each land at ~50%). OFF: additive SUM, so strengths act as gains and "
-                               "stacked LoRAs keep full magnitude. Turn OFF if the merge feels too weak.",
+                               "stacked LoRAs keep full magnitude (matches ComfyUI's native LoRA "
+                               "stacking, the default). Turn ON only to blend/interpolate LoRAs.",
                 }),
             },
         }
@@ -105,7 +106,7 @@ Key Parameters:
 - lambda (global): Scaling factor applied to the summed task vectors before adding back to the base. Default 1.0
 """
 
-    def get_method(self, rescale_norm: str = "default", average_weights: bool = 0.5, ):
+    def get_method(self, rescale_norm: str = "default", average_weights: bool = False):
         method_def = {
             "name": "task_arithmetic",
             "settings": {
@@ -129,11 +130,12 @@ class TIESMergeMethod:
                                   "• linf: L-infinity norm (preserves max absolute value, prevents amplification)\n"
                                   "• none: No rescaling (may reduce merge strength)"}),
                 "average_weights": ("BOOLEAN", {
-                    "default": True,
+                    "default": False,
                     "tooltip": "ON: divide by the per-element sum of contributing weights — a weighted "
                                "AVERAGE, so per-LoRA strengths act as ratios (two LoRAs at strength 1.0 "
                                "each land at ~50%). OFF: additive SUM, so strengths act as gains and "
-                               "stacked LoRAs keep full magnitude. Turn OFF if the merge feels too weak.",
+                               "stacked LoRAs keep full magnitude (matches ComfyUI's native LoRA "
+                               "stacking, the default). Turn ON only to blend/interpolate LoRAs.",
                 }),
                 "density": ("FLOAT", {
                     "default": .9,
@@ -163,7 +165,7 @@ class TIESMergeMethod:
     - lambda (global): As in Task Arithmetic
     """
 
-    def get_method(self, rescale_norm:str = "default", average_weights: bool = True, density: float = 1):
+    def get_method(self, rescale_norm:str = "default", average_weights: bool = False, density: float = 1):
         method_def = {
             "name": "ties",
             "settings": {
@@ -213,7 +215,8 @@ class BreadcrumbsMergeMethod:
                     "tooltip": "ON: divide by the per-element sum of contributing weights — a weighted "
                                "AVERAGE, so per-LoRA strengths act as ratios (two LoRAs at strength 1.0 "
                                "each land at ~50%). OFF: additive SUM, so strengths act as gains and "
-                               "stacked LoRAs keep full magnitude. Turn OFF if the merge feels too weak.",
+                               "stacked LoRAs keep full magnitude (matches ComfyUI's native LoRA "
+                               "stacking, the default). Turn ON only to blend/interpolate LoRAs.",
                 }),
             },
         }
@@ -316,11 +319,12 @@ class DAREMergeMethod:
                     "tooltip": "Fraction of weights to retain after random pruning.",
                 }),
                 "average_weights": ("BOOLEAN", {
-                    "default": True,
+                    "default": False,
                     "tooltip": "ON: divide by the per-element sum of contributing weights — a weighted "
                                "AVERAGE, so per-LoRA strengths act as ratios (two LoRAs at strength 1.0 "
                                "each land at ~50%). OFF: additive SUM, so strengths act as gains and "
-                               "stacked LoRAs keep full magnitude. Turn OFF if the merge feels too weak.",
+                               "stacked LoRAs keep full magnitude (matches ComfyUI's native LoRA "
+                               "stacking, the default). Turn ON only to blend/interpolate LoRAs.",
                 }),
             },
         }
@@ -348,7 +352,7 @@ class DAREMergeMethod:
     """
 
     def get_method(self, sign_consensus: bool = False, rescale_norm: str = "default", density: float = .8,
-                   average_weights: bool = True):
+                   average_weights: bool = False):
         method_def = {
             "name": "dare",
             "settings": {
@@ -396,11 +400,12 @@ class DELLAMergeMethod:
                                "Drop probabilities assigned will range from density - epsilon to density + epsilon.",
                 }),
                 "average_weights": ("BOOLEAN", {
-                    "default": True,
+                    "default": False,
                     "tooltip": "ON: divide by the per-element sum of contributing weights — a weighted "
                                "AVERAGE, so per-LoRA strengths act as ratios (two LoRAs at strength 1.0 "
                                "each land at ~50%). OFF: additive SUM, so strengths act as gains and "
-                               "stacked LoRAs keep full magnitude. Turn OFF if the merge feels too weak.",
+                               "stacked LoRAs keep full magnitude (matches ComfyUI's native LoRA "
+                               "stacking, the default). Turn ON only to blend/interpolate LoRAs.",
                 }),
             },
         }
@@ -442,7 +447,7 @@ class DELLAMergeMethod:
     """
 
     def get_method(self, sign_consensus: bool = False, rescale_norm: str = "default", density: float = 1, epsilon: float = .01,
-                   average_weights: bool = True):
+                   average_weights: bool = False):
         method_def = {
             "name": "della",
             "settings": {
