@@ -52,17 +52,26 @@ Requires: 2+ LoRAs plus base model"""
         return {
             "required": {
                 "select_topk": ("FLOAT", {
-                    "default": .1,
+                    "default": .5,
                     "min": 0,
                     "max": 1,
                     "step": 0.01,
-                    "tooltip": "Fraction of elements with the highest variance in the delta parameters to retain.",
+                    "tooltip": "Fraction of elements with the highest variance in the delta parameters to retain. "
+                               "1.0 keeps everything (strongest); lower values merge more selectively (and weaker).",
+                }),
+                "average_weights": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "OFF: additive SUM of the sign-agreeing, selected contributions, so per-LoRA "
+                               "strengths act as gains and stacked LoRAs keep full magnitude (matches ComfyUI's "
+                               "native LoRA stacking and the other merge nodes, the default). ON: SCE's normalized "
+                               "weighted AVERAGE, so strengths act as ratios and the result is a blend/interpolation "
+                               "(weaker magnitude). Turn ON only to blend LoRAs.",
                 }),
             },
         }
 
-    def get_settings(self, select_topk: float = 0.1):
-        return {"select_topk": select_topk}
+    def get_settings(self, select_topk: float = 0.5, average_weights: bool = False):
+        return {"select_topk": select_topk, "normalize": average_weights}
 
 
 class TaskArithmeticMergeMethod:
@@ -473,6 +482,14 @@ class SLERPMergeMethod:
                     "step": 0.01,
                     "tooltip": "interpolation factor. At t=0 will return base_model, at t=1 will return the other one.",
                 }),
+                "average_weights": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "OFF: additive SUM, so per-LoRA strengths act as gains and stacked LoRAs keep full "
+                               "magnitude (matches ComfyUI's native LoRA stacking and the other merge nodes, the "
+                               "default). ON: normalized weighted AVERAGE, so strengths act as ratios and the result "
+                               "is a blend/interpolation (weaker magnitude). Note: strengths control MAGNITUDE only, "
+                               "not the interpolation position.",
+                }),
             },
         }
 
@@ -494,11 +511,12 @@ class SLERPMergeMethod:
     t (global): Interpolation factor. t=0 yields the base_model, t=1 yields the other model
     """
 
-    def get_method(self, t: float = 1., ):
+    def get_method(self, t: float = 1., average_weights: bool = False):
         method_def = {
             "name": "slerp",
             "settings": {
                 "t": t,
+                "normalize": average_weights,
             }
         }
         return (method_def,)
@@ -516,6 +534,14 @@ class NuSlerpMergeMethod:
                 "nuslerp_row_wise": ("BOOLEAN", {
                     "default": False,
                     "tooltip": "SLERP row vectors instead of column vectors.",
+                }),
+                "average_weights": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "OFF: additive SUM, so per-LoRA strengths act as gains and stacked LoRAs keep full "
+                               "magnitude (matches ComfyUI's native LoRA stacking and the other merge nodes, the "
+                               "default). ON: normalized weighted AVERAGE, so strengths act as ratios and the result "
+                               "is a blend/interpolation (weaker magnitude). Note: strengths control MAGNITUDE only, "
+                               "not the interpolation position.",
                 }),
             },
         }
@@ -546,12 +572,14 @@ class NuSlerpMergeMethod:
     Default false
     """
 
-    def get_method(self, nuslerp_flatten: bool = True, nuslerp_row_wise: bool = False):
+    def get_method(self, nuslerp_flatten: bool = True, nuslerp_row_wise: bool = False,
+                   average_weights: bool = False):
         method_def = {
             "name": "nuslerp",
             "settings": {
                 "nuslerp_flatten": nuslerp_flatten,
                 "nuslerp_row_wise": nuslerp_row_wise,
+                "normalize": average_weights,
             }
         }
         return (method_def,)
@@ -576,6 +604,14 @@ class KArcherMergeMethod:
                     "step": 1e-2,
                     "tooltip": "Convergence tolerance for the KArcher mean algorithm. Default 1e-5",
                 }),
+                "average_weights": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "OFF: additive SUM, so per-LoRA strengths act as gains and stacked LoRAs keep full "
+                               "magnitude (matches ComfyUI's native LoRA stacking and the other merge nodes, the "
+                               "default). ON: normalized weighted AVERAGE, so strengths act as ratios and the result "
+                               "is a blend/interpolation (weaker magnitude). Note: strengths control MAGNITUDE only, "
+                               "not the interpolation position.",
+                }),
             },
         }
 
@@ -599,12 +635,13 @@ class KArcherMergeMethod:
     tol (global): Convergence tolerance. Default 0.5
     """
 
-    def get_method(self, max_iter: int = 10, tol: float = 0.5):
+    def get_method(self, max_iter: int = 10, tol: float = 0.5, average_weights: bool = False):
         method_def = {
             "name": "karcher",
             "settings": {
                 "max_iter": max_iter,
                 "tol": tol,
+                "normalize": average_weights,
             }
         }
         return (method_def,)
@@ -621,6 +658,14 @@ class NearSwapMergeMethod:
                     "max": 1,
                     "step": 0.0001,
                     "tooltip": "Similarity threshold for NearSwap merge.",
+                }),
+                "average_weights": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "OFF: additive SUM, so per-LoRA strengths act as gains and stacked LoRAs keep full "
+                               "magnitude (matches ComfyUI's native LoRA stacking and the other merge nodes, the "
+                               "default). ON: normalized weighted AVERAGE, so strengths act as ratios and the result "
+                               "is a blend/interpolation (weaker magnitude). Note: strengths control MAGNITUDE only, "
+                               "not the interpolation position.",
                 }),
             },
         }
@@ -650,11 +695,12 @@ class NearSwapMergeMethod:
     then returns weight * secondary + (1 - weight) * base
     """
 
-    def get_method(self, similarity_threshold: float = 0.001):
+    def get_method(self, similarity_threshold: float = 0.001, average_weights: bool = False):
         method_def = {
             "name": "nearswap",
             "settings": {
                 "similarity_threshold": similarity_threshold,
+                "normalize": average_weights,
             }
         }
         return (method_def,)

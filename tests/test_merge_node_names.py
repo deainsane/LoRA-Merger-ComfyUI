@@ -56,10 +56,45 @@ def test_average_weights_defaults_off():
         assert default is False, f"{cls_name}: average_weights default {default!r} != False"
 
 
+def test_sce_additive_default_and_wiring():
+    # SCE exposes select_topk + average_weights; average_weights wires to the
+    # internal "normalize" and defaults OFF (additive), like the GTA family.
+    cls = N.SCEMergeMethod
+    keys = list(cls.INPUT_TYPES()["required"].keys())
+    assert keys == ["select_topk", "average_weights"], keys
+    assert cls.INPUT_TYPES()["required"]["average_weights"][1]["default"] is False
+    s = cls().get_method(select_topk=0.5, average_weights=False)[0]["settings"]
+    assert s["normalize"] is False, f"SCE: normalize not wired from average_weights ({s})"
+    assert s["select_topk"] == 0.5, s
+    # ON -> normalized average
+    s_on = cls().get_method(select_topk=1.0, average_weights=True)[0]["settings"]
+    assert s_on["normalize"] is True, s_on
+
+
+def test_interp_nodes_average_weights_wiring():
+    cases = {
+        "SLERPMergeMethod": dict(),
+        "NuSlerpMergeMethod": dict(),
+        "KArcherMergeMethod": dict(),
+        "NearSwapMergeMethod": dict(),
+    }
+    for cls_name in cases:
+        cls = getattr(N, cls_name)
+        req = cls.INPUT_TYPES()["required"]
+        assert "average_weights" in req, f"{cls_name}: no average_weights widget"
+        assert req["average_weights"][1]["default"] is False, \
+            f"{cls_name}: average_weights default != False"
+        s_off = cls().get_method(average_weights=False)[0]["settings"]
+        assert s_off["normalize"] is False, f"{cls_name}: normalize not wired ({s_off})"
+        s_on = cls().get_method(average_weights=True)[0]["settings"]
+        assert s_on["normalize"] is True, f"{cls_name}: normalize ON not wired"
+
+
 def test_merger_output_scale():
     keys = list(LoraMergerMergekit.INPUT_TYPES()["required"].keys())
     expected = ["method", "components", "strengths", "output_scale",
-                "spectral_norm_scale", "merge_clip", "device", "dtype", "refactor_method"]
+                "spectral_norm_scale", "merge_clip", "device", "dtype", "refactor_method",
+                "offload_models"]
     assert keys == expected, f"merger widget order {keys} != {expected}"
     params = inspect.signature(LoraMergerMergekit.lora_mergekit).parameters
     assert "output_scale" in params and "lambda_" not in params, list(params)
@@ -71,7 +106,9 @@ def run():
         ("input_types_renamed_same_order", test_input_types_renamed_same_order),
         ("settings_internal_keys_unchanged", test_settings_internal_keys_unchanged),
         ("average_weights_defaults_off", test_average_weights_defaults_off),
+        ("sce_additive_default_and_wiring", test_sce_additive_default_and_wiring),
         ("merger_output_scale", test_merger_output_scale),
+        ("interp_nodes_average_weights_wiring", test_interp_nodes_average_weights_wiring),
     ]:
         try:
             fn(); print(f"PASS {name}")
@@ -79,7 +116,7 @@ def run():
             failed += 1; print(f"FAIL {name}"); traceback.print_exc()
     if failed:
         print(f"\n{failed} FAILED"); sys.exit(1)
-    print(f"\nAll 4 passed")
+    print(f"\nAll 6 passed")
 
 
 run()
