@@ -29,7 +29,8 @@ from mergekit.merge_methods.slerp import SlerpTask
 from mergekit.sparsify import RescaleNorm
 import mergekit.sparsify as sparsify_module
 
-from .utils import apply_weights_to_tensors
+from .utils import apply_weights_to_tensors, create_map, create_tensor_param
+from .gta import sce_delta_merge
 
 def generalized_task_arithmetic_merge(
     tensors: Dict[ModelReference, torch.Tensor],
@@ -228,6 +229,98 @@ def sce_merge(
         raise RuntimeError(error_msg)
 
     return result
+
+
+def sce_merge_deltas(
+    deltas: list,
+    weights: torch.Tensor,
+    select_topk: float = 0.1,
+    int8_mask: bool = False,
+    normalize: bool = False,
+) -> torch.Tensor:
+    """
+    Delta-space SCE merge.
+
+    Runs mergekit's SCE directly on the full per-LoRA deltas (out x in), the same
+    way the GTA family is merged in delta space, instead of merging the up/down
+    factors separately. Merging the factors independently injects meaningless
+    up_i @ down_j cross-terms and produces a near-noise result for SCE; operating
+    on the reconstructed deltas fixes that.
+
+    Args:
+        deltas: List of dense LoRA delta tensors (all the same shape).
+        weights: Per-LoRA strength weights (1-D tensor, aligned with `deltas`).
+        select_topk: Fraction of highest-variance elements to retain.
+        int8_mask: Use int8 masking inside mergekit's SCE.
+
+    Args:
+        normalize: False (default) -> additive SUM of the sign-agreeing selected
+            contributions (strengths act as gains, full stacked magnitude). True ->
+            mergekit's normalized weighted AVERAGE (strengths act as ratios; a
+            blend). See :func:`sce_delta_merge`.
+
+    Returns:
+        Merged dense delta (to be refactored back into a LoRA via
+        `merged_delta_to_lora`).
+
+    Uses a streaming implementation (:func:`sce_delta_merge`) that never stacks the
+    deltas into an ``[N, out, in]`` tensor, so peak VRAM stays bounded on large
+    FLUX layers (the naive mergekit stack OOMs an 8 GB card). ``int8_mask`` is
+    accepted for API parity but does not change the result and is ignored.
+    """
+    if not deltas:
+        raise ValueError("sce_merge_deltas requires at least one delta")
+
+    # Bake the per-LoRA strength into each delta (the task vectors SCE operates on).
+    weighted = [float(w) * d for w, d in zip(weights.tolist(), deltas)]
+
+    # A single contributing LoRA has zero cross-tensor variance, so SCE's
+    # variance mask would zero the whole delta (no impact). Fall back to the
+    # single weighted delta in that case.
+    if len(weighted) == 1:
+        return weighted[0]
+
+    # select_topk<=0 retains no elements -> zero delta.
+    if select_topk <= 0:
+        return torch.zeros_like(deltas[0])
+
+    return sce_delta_merge(weighted, select_topk=select_topk, normalize=normalize)
+
+
+INTERP_MODES = ("slerp", "nuslerp", "karcher", "nearswap")
+
+
+def interp_delta_merge(
+    method,
+    deltas: list,
+    weights: torch.Tensor,
+    method_args: Dict[str, Any],
+    key: str = "merge",
+    *,
+    normalize: bool = False,
+    dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
+    if not deltas:
+        raise ValueError("interp_delta_merge requires at least one delta")
+
+    mag = weights.abs().to(torch.float32)
+    strength_scale = float(mag.sum()) if not normalize else float(mag.mean())
+
+    if len(deltas) == 1:
+        return deltas[0] * strength_scale
+
+    tensor_map, weight_map = {}, {}
+    weight_info = WeightInfo(name=f"{key}.merge", dtype=dtype, is_embed=False)
+    for i, d in enumerate(deltas):
+        ref = ModelReference(model=ModelPath(path=f"{key}.{i}"))
+        tensor_map[ref] = d
+        weight_map[ref] = torch.tensor(1.0)
+    gather = GatherTensors(weight_info=create_map(key, tensor_map, dtype))
+    params = ImmutableMap(
+        {r: ImmutableMap(create_tensor_param(weight_map[r], method_args))
+         for r in tensor_map})
+    blend = method(tensor_map, gather, weight_info, params, method_args)
+    return blend * strength_scale
 
 
 def karcher_merge(

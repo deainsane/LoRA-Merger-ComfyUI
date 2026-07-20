@@ -19,7 +19,10 @@ from .utils import (
     simple_weighted_average,
 )
 from .dispatcher import get_merge_method, prepare_method_args
-from .algorithms import MERGE_ALGORITHMS, get_merge_algorithm
+from .algorithms import (
+    MERGE_ALGORITHMS, get_merge_algorithm, sce_merge_deltas,
+    interp_delta_merge, INTERP_MODES,
+)
 from .base_node import BaseMergeMethodNode, BaseTaskArithmeticNode
 
 __all__ = [
@@ -36,6 +39,9 @@ __all__ = [
     # Algorithms
     'MERGE_ALGORITHMS',
     'get_merge_algorithm',
+    'sce_merge_deltas',
+    'interp_delta_merge',
+    'INTERP_MODES',
     # Base classes
     'BaseMergeMethodNode',
     'BaseTaskArithmeticNode',
