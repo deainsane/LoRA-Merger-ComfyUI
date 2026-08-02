@@ -57,10 +57,14 @@ def pytest_ignore_collect(collection_path, config):
 
 def _mock_comfyui_modules():
     """Install stand-ins for the ComfyUI modules src/ imports at module scope."""
+    # Every comfy submodule imported anywhere under src/ needs an entry: `comfy`
+    # is a MagicMock rather than a real package, so `import comfy.<x>` only
+    # resolves via sys.modules. Keep in sync with:
+    #   grep -rhoE "(from|import) comfy(\.[a-z_]+)*" src/ --include=*.py | sort -u
     comfy_mock = MagicMock()
     sys.modules['comfy'] = comfy_mock
     for name in ('utils', 'model_management', 'lora', 'weight_adapter',
-                 'model_patcher', 'sd'):
+                 'model_patcher', 'sd', 'sample'):
         sys.modules[f'comfy.{name}'] = MagicMock()
 
     class LoRAAdapterMock:
@@ -90,6 +94,7 @@ def _mock_comfyui_modules():
     sys.modules['comfy_extras'] = MagicMock()
     sys.modules['comfy_extras.nodes_custom_sampler'] = MagicMock()
     sys.modules['nodes'] = MagicMock()
+    sys.modules['latent_preview'] = MagicMock()
 
     folder_paths_mock = MagicMock()
     folder_paths_mock.get_folder_paths.return_value = []

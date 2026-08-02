@@ -241,7 +241,7 @@ Nearest neighbor parameter swapping.
 **Parameters:**
 - `distance_metric` ("cosine" or "euclidean"): Distance measure
 
-> **Delta-space + `average_weights` (v2.3.0):** SLERP, NuSLERP, Karcher and NearSwap now merge in
+> **Delta-space + `average_weights` (v2.4.0):** SLERP, NuSLERP, Karcher and NearSwap now merge in
 > delta space (like the GTA family), reconstructing the full LoRA delta instead of merging the
 > up/down factors separately. Each also exposes `average_weights` (default **OFF** = additive, so
 > stacked LoRAs keep full magnitude; **ON** = normalized average/blend). For these interpolation
@@ -710,7 +710,7 @@ This enables architecture-agnostic preset filters (`"attn-only"`, `"mlp-only"`, 
 
 ## Changelog
 
-### 2.3.0
+### 2.4.0
 
 Delta-space merging for every method, a VRAM overhaul that makes large Flux/DiT
 merges viable on 8 GB cards, and clearer widget names.
@@ -768,6 +768,16 @@ merges viable on 8 GB cards, and clearer widget names.
 
 - Test suite runs without a ComfyUI installation: 238 tests via `pytest tests/`,
   up from 61 reachable before. See [RUN_TESTS.md](RUN_TESTS.md).
+
+### 2.3.0
+
+**Sampler fixes** — the three sampler nodes (Block Sampler, Stack Sampler, Parameter Sweep Sampler) were audited against ComfyUI's reference `SamplerCustomAdvanced` and brought back in line with it:
+
+- **Block Sampler — live previews:** the sampling callback now feeds decoded latent previews to the progress bar, so previews appear during sampling instead of only at the end.
+- **Block Sampler — correct decoded images:** the denoised `x0` is now passed through `model.process_latent_out(...)` before VAE decoding. Previously the raw (model-internal) latent was decoded directly, producing washed-out depth-map / diff-like images instead of real images.
+- **Block Sampler — latent packing:** per-block latents are now combined with `torch.cat` instead of `torch.stack`, fixing a spurious extra dimension that broke `vae.decode`.
+- **All samplers — Dual Model CFG support:** the guider is now rebuilt around the LoRA-patched model while preserving its exact subclass and state (via a shared `rebuild_guider_with_patches` helper). This fixes `DualModelGuider` ("Dual Model CFG Guider"), whose separate unconditional model was previously dropped — the uncond pass incorrectly ran on the patched positive model, producing wrong results. `DualCFGGuider` (`cfg1`/`cfg2`) state is preserved too.
+- **Stack & Sweep Samplers — unified progress bar:** both now use a single progress bar spanning every sampling step across all iterations (with live previews), instead of a bar that reset on each LoRA/parameter step.
 
 
 ## License
