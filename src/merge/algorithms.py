@@ -30,7 +30,7 @@ from mergekit.sparsify import RescaleNorm
 import mergekit.sparsify as sparsify_module
 
 from .utils import apply_weights_to_tensors, create_map, create_tensor_param
-from .gta import sce_delta_merge
+from .gta import sce_delta_merge, karcher_delta_merge
 
 def generalized_task_arithmetic_merge(
     tensors: Dict[ModelReference, torch.Tensor],
@@ -350,22 +350,18 @@ def karcher_merge(
     """
     method_args = method_args or {}
 
-    # Apply weights to tensors (Karcher uses equal weights internally, so pre-scale)
-    weighted_tensors = apply_weights_to_tensors(tensors, tensor_parameters)
-
-    merge = KarcherMerge()
-    task = merge.make_task(
-        output_weight=weight_info,
-        tensors=gather_tensors,
-        base_model=None,  # No base model for LoRA merging
-        parameters=ImmutableMap({
-            "max_iter": method_args.get("max_iter", 10),
-            "tol": method_args.get("tol", 1e-5)
-        }),
-        tensor_parameters=tensor_parameters,
+    # Memory-frugal delta-space Karcher (see gta.karcher_delta_merge). The stock
+    # mergekit path makes ~3N full-tensor copies and OOMs large FLUX layers; this
+    # consumes the delta list in place instead. Karcher uses equal weights
+    # internally, so per-LoRA strength (applied as a magnitude post-scale in
+    # interp_delta_merge) does not enter here.
+    deltas = list(tensors.values())
+    out = karcher_delta_merge(
+        deltas,
+        max_iter=method_args.get("max_iter", 10),
+        tol=method_args.get("tol", 1e-5),
     )
-
-    return task.execute(tensors=weighted_tensors) * method_args.get('lambda_', 1.0)
+    return out * method_args.get('lambda_', 1.0)
 
 
 def slerp_merge(

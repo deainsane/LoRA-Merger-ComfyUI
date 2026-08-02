@@ -23,6 +23,9 @@ from .merge import (
     get_merge_method,
     prepare_method_args,
     simple_weighted_average,
+    sce_merge_deltas,
+    interp_delta_merge,
+    INTERP_MODES,
 )
 from .mergekit_utils import load_on_device
 # Import centralized types
@@ -98,6 +101,15 @@ class LoraMergerMergekit:
                         ),
                     },
                 ),
+                "offload_models": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": (
+                        "Evict resident models (DIT/CLIP/VAE) from VRAM before merging, "
+                        "to avoid OOM on low-VRAM cards.\n"
+                        "ComfyUI reloads them automatically when the sampler runs afterward.\n"
+                        "Only acts when device=cuda; no effect on cpu merges."
+                    ),
+                }),
             },
         }
 
@@ -129,7 +141,8 @@ Outputs:
                       spectral_norm_scale: float = 0.0,
                       merge_clip: bool = True,
                       device=None, dtype=None,
-                      refactor_method: str = "energy_rSVD"):
+                      refactor_method: str = "energy_rSVD",
+                      offload_models: bool = True):
 
         if components is None:
             raise Exception("No components provided for merging.")
@@ -138,6 +151,21 @@ Outputs:
         self.strengths = strengths
 
         device, dtype = map_device(device, dtype)
+
+        # Free VRAM held by resident models (DIT/CLIP/VAE) before the heavy
+        # CUDA merge, so low-VRAM cards don't OOM. ComfyUI reloads them lazily
+        # when the downstream sampler runs, so no manual reload is needed.
+        if offload_models and device.type == "cuda":
+            mm = comfy.model_management
+            _mib = lambda b: b / (1024 ** 2)
+            free_before = mm.get_free_memory(device)
+            logging.info("PM LoRA Merger: offloading resident models from VRAM before merge "
+                         f"(free VRAM before: {_mib(free_before):.0f} MiB)")
+            mm.unload_all_models()
+            mm.soft_empty_cache()
+            free_after = mm.get_free_memory(device)
+            logging.info(f"PM LoRA Merger: free VRAM after offload: {_mib(free_after):.0f} MiB "
+                         f"(reclaimed {_mib(free_after - free_before):.0f} MiB)")
 
         # Use dispatcher to get merge method
         merge_method = get_merge_method(method['name'])
@@ -268,8 +296,14 @@ Outputs:
 
             mode = method_args.get('mode')
             is_gta = (not is_clip) and (mode in GTA_MODES)
+            # SCE and the interpolation methods (slerp/nuslerp/karcher/nearswap) also
+            # merge in delta space: merging the up/down factors separately injects
+            # meaningless up_i @ down_j cross-terms. Reconstruct each LoRA's full
+            # delta, merge in delta space, then refactor back into a LoRA.
+            is_interp = (not is_clip) and (mode in INTERP_MODES)
+            is_delta_space = is_gta or is_interp or ((not is_clip) and mode == "sce")
 
-            if is_gta:
+            if is_delta_space:
                 deltas = []
                 for (u, d, a) in lora_key_tuples.values():
                     u = u.to(device=device, dtype=torch.float32)
@@ -283,17 +317,32 @@ Outputs:
                     else:
                         deltas.append(scale * (u @ d))
 
-                merged = gta_merge(
-                    deltas,
-                    weights.to(torch.float32),
-                    mode=mode,
-                    normalize=method_args.get('normalize', True),
-                    density=method_args.get('density', 1.0),
-                    epsilon=method_args.get('epsilon', 0.0),
-                    gamma=method_args.get('gamma', 0.0),
-                    sign_consensus_algorithm=method_args.get('sign_consensus_algorithm', False),
-                    rescale_norm=method_args.get('rescale_norm', 'default'),
-                )
+                if is_gta:
+                    merged = gta_merge(
+                        deltas,
+                        weights.to(torch.float32),
+                        mode=mode,
+                        normalize=method_args.get('normalize', True),
+                        density=method_args.get('density', 1.0),
+                        epsilon=method_args.get('epsilon', 0.0),
+                        gamma=method_args.get('gamma', 0.0),
+                        sign_consensus_algorithm=method_args.get('sign_consensus_algorithm', False),
+                        rescale_norm=method_args.get('rescale_norm', 'default'),
+                    )
+                elif is_interp:
+                    merged = interp_delta_merge(
+                        method, deltas, weights.to(torch.float32), method_args,
+                        key=key, normalize=method_args.get('normalize', False),
+                        dtype=torch.float32,
+                    )
+                else:  # SCE in delta space
+                    merged = sce_merge_deltas(
+                        deltas,
+                        weights.to(torch.float32),
+                        select_topk=method_args.get('select_topk', 0.5),
+                        int8_mask=method_args.get('int8_mask', False),
+                        normalize=method_args.get('normalize', False),
+                    )
 
                 target_rank = max(u.shape[1] for (u, _, _) in lora_key_tuples.values())
                 up, down, alpha_out = merged_delta_to_lora(
@@ -372,14 +421,15 @@ Outputs:
         update_frequency = max(1, len(keys_to_process) // 100)  # Update at most 100 times
         completed_count = 0
 
-        # The GTA delta-space path materializes full dense deltas (hundreds of MB
-        # each for large FLUX layers); running 8 concurrently multiplies peak VRAM
-        # ~8x and exhausts an 8 GB card with a resident model (OOM, or a hard
-        # segfault under the quantized-model CUDA context). Serialize it on CUDA --
-        # GPU-serial is only ~11 s for 256 keys. The light non-GTA factored path
-        # keeps the 8-way pool.
-        is_gta = method_args.get('mode') in GTA_MODES
-        n_workers = 1 if (is_gta and getattr(device, "type", device) == "cuda") else 8
+        # The delta-space path (GTA family + SCE) materializes full dense deltas
+        # (hundreds of MB each for large FLUX layers); running 8 concurrently
+        # multiplies peak VRAM ~8x and exhausts an 8 GB card with a resident model
+        # (OOM, or a hard segfault under the quantized-model CUDA context).
+        # Serialize it on CUDA -- GPU-serial is only ~11 s for 256 keys. The light
+        # non-GTA factored path keeps the 8-way pool.
+        _mode = method_args.get('mode')
+        is_delta_space = (_mode in GTA_MODES) or (_mode == "sce") or (_mode in INTERP_MODES)
+        n_workers = 1 if (is_delta_space and getattr(device, "type", device) == "cuda") else 8
         logging.info(f"Merging with {n_workers} worker(s) "
                      f"(mode={method_args.get('mode')}, device={device})")
 

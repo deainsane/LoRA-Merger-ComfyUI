@@ -241,6 +241,13 @@ Nearest neighbor parameter swapping.
 **Parameters:**
 - `distance_metric` ("cosine" or "euclidean"): Distance measure
 
+> **Delta-space + `average_weights` (v2.2.5):** SLERP, NuSLERP, Karcher and NearSwap now merge in
+> delta space (like the GTA family), reconstructing the full LoRA delta instead of merging the
+> up/down factors separately. Each also exposes `average_weights` (default **OFF** = additive, so
+> stacked LoRAs keep full magnitude; **ON** = normalized average/blend). For these interpolation
+> methods, per-LoRA strength controls **magnitude only** — blend position comes from the method's
+> own parameter (SLERP `t`, NearSwap threshold).
+
 ### Utility Nodes
 
 #### PM LoRA Modifier

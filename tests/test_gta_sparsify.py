@@ -110,6 +110,34 @@ def test_della_chunk_boundary_invariant_density():
     assert abs(ka - kb) < 0.01 and abs(ka - 0.5) < 0.02
 
 
+def test_della_scatter_rank_equivalence():
+    # The chunked path builds per-row ranks with scatter_ instead of a second
+    # argsort; the rank values must match exactly (only the memory differs).
+    torch.manual_seed(1)
+    mags = torch.randn(50, 40).abs()
+    sorted_idx = torch.argsort(mags, dim=1, descending=False)
+    ranks_argsort = sorted_idx.argsort(dim=1)                      # old method
+    positions = torch.arange(40, dtype=torch.int32).unsqueeze(0)
+    ranks_scatter = torch.empty((50, 40), dtype=torch.int32)
+    ranks_scatter.scatter_(1, sorted_idx, positions.expand(50, 40))  # new method
+    assert torch.equal(ranks_scatter.long(), ranks_argsort)
+
+
+def test_della_wide_layer_preserves_density_and_monotonic():
+    # Wide layer: rows>threshold AND large cols, so the element budget forces
+    # short blocks (the KREA2-style path). Statistics must still hold.
+    torch.manual_seed(0)
+    t = torch.randn(8000, 6000)
+    got = gta.sparsify(t, "della_magprune", density=0.6, epsilon=0.2)
+    kept = (got != 0).float().mean().item()
+    assert abs(kept - 0.6) < 0.02, f"kept {kept} != ~0.6"
+    mags = t.abs()
+    med = mags.median(dim=1, keepdim=True).values
+    hi = mags >= med
+    kept_mask = got != 0
+    assert kept_mask[hi].float().mean().item() > kept_mask[~hi].float().mean().item() + 0.05
+
+
 run([
     ("magnitude", test_magnitude_matches_mergekit),
     ("magnitude_rescale_l1", test_magnitude_rescale_l1_matches),
@@ -121,4 +149,6 @@ run([
     ("della_large_l1", test_della_large_l1_preserved),
     ("della_large_monotonic", test_della_large_keep_prob_monotonic_in_magnitude),
     ("della_chunk_density", test_della_chunk_boundary_invariant_density),
+    ("della_scatter_rank_equivalence", test_della_scatter_rank_equivalence),
+    ("della_wide_density_monotonic", test_della_wide_layer_preserves_density_and_monotonic),
 ])
