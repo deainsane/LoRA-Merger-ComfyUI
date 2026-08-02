@@ -119,4 +119,8 @@ def run():
     print(f"\nAll 6 passed")
 
 
-run()
+# Runnable as a plain script (`python tests/<file>.py`); under pytest the
+# test_* functions are collected directly, so the script runner must not fire
+# at import time -- it calls sys.exit() and would abort collection.
+if __name__ == "__main__":
+    run()

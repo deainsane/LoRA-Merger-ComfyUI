@@ -1,121 +1,146 @@
 # Running Tests
 
-Quick guide to running tests for the LoRA-Merger-ComfyUI custom nodes.
+The test suite runs **without a ComfyUI installation**. ComfyUI's modules
+(`comfy`, `folder_paths`, `comfy_extras`, `nodes`) are mocked in
+[tests/conftest.py](tests/conftest.py), so the only requirements are torch,
+mergekit and pytest.
 
-## Integration Test
-
-### Quick Start
-
-```bash
-cd /home/lars/SD/Apps/ComfyUI/custom_nodes/LoRA-Merger-ComfyUI
-/home/lars/SD/Apps/ComfyUI/venv/bin/python3 test_gradient_analyzer_integration.py
-```
-
-### What It Tests
-
-The integration test validates the **PM LoRA Semantic Analyzer (Gradient)** pipeline:
-
-1. ✅ Dependencies (PyTorch, diffusers, safetensors)
-2. ✅ Node instantiation (all semantic merge nodes)
-3. ✅ INPUT_TYPES configuration
-4. ✅ Checkpoint dropdown population
-5. ✅ Specification parsing
-
-### Expected Output
-
-```
-================================================================================
-PM LoRA Semantic Analyzer (Gradient) - Integration Test
-================================================================================
-
-[... file checks ...]
-
-================================================================================
-TEST SUMMARY
-================================================================================
-✓ PASS   Dependencies
-✓ PASS   LoRA Power Stacker
-✓ PASS   Semantic Analyzer Instantiation
-✓ PASS   Semantic Merge Spec
-✓ PASS   Semantic Merger Instantiation
-
-Results: 5/5 tests passed
-
-🎉 ALL TESTS PASSED!
-```
-
-### Exit Codes
-
-- `0` - All tests passed
-- `1` - One or more tests failed
-- `130` - Test interrupted (Ctrl+C)
-
-## Unit Tests
-
-### Run All Unit Tests
+## Quick Start
 
 ```bash
 cd /home/lars/SD/Apps/ComfyUI/custom_nodes/LoRA-Merger-ComfyUI
-/home/lars/SD/Apps/ComfyUI/venv/bin/python3 -m pytest tests/
+/home/lars/SD/Apps/ComfyUI/.venv/bin/python -m pytest tests/
 ```
 
-### Run Specific Test Files
+Expected: **238 passed**.
+
+Any Python with the dependencies below works; `/home/lars/SD/Apps/ComfyUI/.venv`
+is simply the environment that already has them on this machine.
+
+### Run a single file or test
 
 ```bash
-# Test types system
-/home/lars/SD/Apps/ComfyUI/venv/bin/python3 -m pytest tests/test_types.py -v
+PY=/home/lars/SD/Apps/ComfyUI/.venv/bin/python
 
-# Test decomposition
-/home/lars/SD/Apps/ComfyUI/venv/bin/python3 -m pytest tests/test_decomposition.py -v
-
-# Test validation
-/home/lars/SD/Apps/ComfyUI/venv/bin/python3 -m pytest tests/test_validation.py -v
-
-# Test algorithms
-/home/lars/SD/Apps/ComfyUI/venv/bin/python3 -m pytest tests/test_algorithms.py -v
+$PY -m pytest tests/test_validation.py            # one file
+$PY -m pytest tests/test_gta_sparsify.py -v       # verbose
+$PY -m pytest tests/test_types.py::TestTypeGuards # one class
+$PY -m pytest tests/ -k "sparsify or interp"      # by name
 ```
 
-### Run with Coverage
+### Coverage
 
 ```bash
-/home/lars/SD/Apps/ComfyUI/venv/bin/python3 -m pytest --cov=src tests/
+/home/lars/SD/Apps/ComfyUI/.venv/bin/python -m pytest --cov=src tests/
 ```
 
-## Syntax Validation
+Requires `pytest-cov` (see `requirements-dev.txt`).
 
-### Check Python Syntax
+## Two Kinds of Test File
+
+Both kinds are collected by `pytest tests/`; the difference only matters when
+you want to run one directly.
+
+**Script-style** — plain asserts driven by a `run([...])` list, guarded behind
+`if __name__ == "__main__":`. These also run as standalone scripts with no
+pytest at all, which is useful for a quick check or when bisecting:
 
 ```bash
-# Single file
-python3 -m py_compile src/nodes_semantic_merge.py
-
-# All Python files
-find . -name "*.py" -not -path "./venv/*" -exec python3 -m py_compile {} \;
+/home/lars/SD/Apps/ComfyUI/.venv/bin/python tests/test_gta_sparsify.py
+# -> PASS magnitude ... All 12 passed
 ```
 
-### Check with Flake8
+Files: `test_gta_behavior`, `test_gta_merge`, `test_gta_parity`,
+`test_gta_sparsify`, `test_interp_delta_merge`, `test_interp_fidelity`,
+`test_interp_integration`, `test_lora_save`, `test_merge_node_names`,
+`test_merger_vram_offload`.
 
-```bash
-/home/lars/SD/Apps/ComfyUI/venv/bin/python3 -m flake8 src/ --max-line-length=120
-```
+**Pytest-style** — `Test*` classes, fixtures, `pytest.raises`. Run these through
+pytest only; executing them directly does not set up the import paths.
+
+Files: `test_algorithms`, `test_blocks`, `test_decomposition`,
+`test_spectral_norm`, `test_types`, `test_utility`, `test_validation`.
+
+## How Imports Are Set Up
+
+Two rules keep the suite importable outside ComfyUI. Both are handled by
+[tests/conftest.py](tests/conftest.py); they matter when you add a test.
+
+1. **Import project code as `src.<module>`**, never as a bare top-level module:
+
+   ```python
+   from src.validation import LoRAStackValidator   # correct
+   from validation import LoRAStackValidator       # breaks
+   from types import is_lora_tensors               # breaks: stdlib `types`
+   ```
+
+   Modules under `src/` use package-relative imports (`from ..types import ...`),
+   which only resolve when `src` itself is the package. conftest puts the project
+   root on `sys.path` for this. The same applies to `unittest.mock.patch`
+   targets: `@patch('src.merge.algorithms.LinearMergeTask')`.
+
+2. **Do not add `tests/__init__.py`.** With it, pytest walks up to the project
+   root's `__init__.py` — the ComfyUI node entry point — and imports ComfyUI
+   before any test runs.
+
+`conftest.py` lives in `tests/`, not the project root, for the same reason: a
+root-level conftest is imported as part of that package.
 
 ## Test Files
 
-### Integration Tests
-- `test_gradient_analyzer_integration.py` - Validates semantic analyzer pipeline
+| File | Covers |
+|------|--------|
+| `test_algorithms.py` | Merge algorithm registry and dispatch |
+| `test_blocks.py` | Block selection, key normalization, block weights |
+| `test_decomposition.py` | SVD / randomized SVD / energy-based decomposers |
+| `test_gta_behavior.py` | GTA delta-space merge behavior |
+| `test_gta_merge.py` | Sign election and disjoint merge |
+| `test_gta_parity.py` | Parity of local sparsify vs. mergekit |
+| `test_gta_sparsify.py` | magnitude / outliers / bernoulli / della sparsify |
+| `test_interp_delta_merge.py` | slerp / nuslerp / karcher / nearswap in delta space |
+| `test_interp_fidelity.py` | Delta-space blend vs. reference average |
+| `test_interp_integration.py` | End-to-end merge through the node |
+| `test_lora_save.py` | Tensor sanitization before safetensors save |
+| `test_merge_node_names.py` | Node widget names and titles |
+| `test_merger_vram_offload.py` | `offload_models` widget behavior |
+| `test_spectral_norm.py` | Spectral norm scaling |
+| `test_types.py` | Type guards and validators |
+| `test_utility.py` | SVD/QR pipeline helpers |
+| `test_validation.py` | LoRA stack, shape and parameter validation |
 
-### Unit Tests (in `tests/` directory)
-- `test_types.py` - Type system and validators
-- `test_algorithms.py` - Merge algorithms
-- `test_decomposition.py` - SVD/QR decomposition
-- `test_validation.py` - Input validation
+## Requirements
 
-### Test Workflows
-- `/home/lars/SD/Apps/ComfyUI/user/default/workflows/PM-Gradient-Analyzer-zImage.json` - Example workflow
+```bash
+pip install -r requirements-dev.txt
+```
+
+Needed to run the suite: `torch`, `mergekit`, `pytest`. Optional:
+`pytest-cov` (coverage), `pytest-xdist` (`-n auto` parallel runs).
+
+A ComfyUI installation is **not** required.
+
+## Syntax and Lint
+
+```bash
+find src -name "*.py" -exec python3 -m py_compile {} \;
+/home/lars/SD/Apps/ComfyUI/.venv/bin/python -m flake8 src/ --max-line-length=120
+```
+
+## Debugging Failures
+
+```bash
+PY=/home/lars/SD/Apps/ComfyUI/.venv/bin/python
+
+$PY -m pytest tests/ -vv --tb=long   # full tracebacks
+$PY -m pytest tests/ -x              # stop at first failure
+$PY -m pytest tests/ --lf            # rerun last failures
+```
+
+If a new test fails at import with `attempted relative import beyond top-level
+package`, `No module named 'src'`, or picks up the stdlib `types` module, it is
+importing project code as a top-level module — see "How Imports Are Set Up".
 
 ## Continuous Integration
-
-### GitHub Actions Example
 
 ```yaml
 name: Tests
@@ -126,138 +151,17 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v2
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install pytest pytest-cov
+        run: pip install -r requirements-dev.txt
 
-      - name: Run integration tests
-        run: python3 test_gradient_analyzer_integration.py
-
-      - name: Run unit tests
-        run: pytest tests/ -v --cov=src
+      - name: Run tests
+        run: pytest tests/ -v
 ```
 
-## Test Requirements
-
-### For Integration Tests
-
-**Required:**
-- ComfyUI installed at `/home/lars/SD/Apps/ComfyUI`
-- venv at `/home/lars/SD/Apps/ComfyUI/venv`
-- Dependencies: `torch`, `diffusers>=0.30.0`, `safetensors`
-
-**Optional (for file checks):**
-- zImage checkpoint in `models/diffusion_models/`
-- LoRAs in `models/loras/`
-
-### For Unit Tests
-
-**Required:**
-- PyTorch
-- Standard Python libraries
-
-**Optional:**
-- pytest
-- pytest-cov (for coverage reports)
-
-## Quick Commands Reference
-
-```bash
-# Integration test (basic validation)
-./test_gradient_analyzer_integration.py
-
-# Unit tests (comprehensive)
-pytest tests/ -v
-
-# Syntax check
-python3 -m py_compile src/*.py
-
-# Coverage report
-pytest --cov=src --cov-report=html tests/
-
-# Specific test
-pytest tests/test_types.py::test_validate_lora_tensors -v
-```
-
-## Debugging Test Failures
-
-### Enable Verbose Output
-
-```bash
-# Integration test
-/home/lars/SD/Apps/ComfyUI/venv/bin/python3 test_gradient_analyzer_integration.py 2>&1 | tee test_output.log
-
-# Unit tests
-pytest tests/ -vv --tb=long
-```
-
-### Check Imports
-
-```bash
-/home/lars/SD/Apps/ComfyUI/venv/bin/python3 -c "
-import sys
-sys.path.insert(0, '/home/lars/SD/Apps/ComfyUI')
-sys.path.insert(0, '/home/lars/SD/Apps/ComfyUI/custom_nodes/LoRA-Merger-ComfyUI')
-from src.nodes_semantic_merge import PMLoRASemanticAnalyzerGradient
-print('✓ Import successful')
-"
-```
-
-### Test Individual Components
-
-```bash
-# Test diffusers
-/home/lars/SD/Apps/ComfyUI/venv/bin/python3 -c "
-from diffusers.models import ZImageTransformer2DModel
-print('✓ ZImageTransformer2DModel available')
-"
-
-# Test folder_paths
-/home/lars/SD/Apps/ComfyUI/venv/bin/python3 -c "
-import sys
-sys.path.insert(0, '/home/lars/SD/Apps/ComfyUI')
-import folder_paths
-print('✓ folder_paths available')
-"
-```
-
-## Performance Testing
-
-### Time Individual Tests
-
-```bash
-time /home/lars/SD/Apps/ComfyUI/venv/bin/python3 test_gradient_analyzer_integration.py
-```
-
-### Profile Tests
-
-```bash
-/home/lars/SD/Apps/ComfyUI/venv/bin/python3 -m cProfile -o test_profile.prof test_gradient_analyzer_integration.py
-
-# View profile
-/home/lars/SD/Apps/ComfyUI/venv/bin/python3 -m pstats test_profile.prof
-```
-
-## Documentation
-
-- **TEST_GRADIENT_ANALYZER.md** - Detailed test documentation
-- **QUICK_START_GRADIENT_ANALYZER.md** - User guide
-- **ZIMAGE_LOADER_OPTIMIZATION.md** - Technical details
-- **BUGFIX_ZIMAGE_IMPORT.md** - Import fix documentation
-
-## Support
-
-For issues or questions:
-1. Check test output for error messages
-2. Review documentation files
-3. Verify all dependencies are installed
-4. Check that files exist in expected locations
-5. Open an issue on GitHub if problems persist
+No ComfyUI checkout is needed in CI.

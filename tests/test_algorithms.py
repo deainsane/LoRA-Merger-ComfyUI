@@ -7,19 +7,16 @@ Mock mergekit dependencies to test algorithm logic in isolation.
 
 import pytest
 import torch
-import sys
-from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch
 
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from merge.algorithms import (
+# Imported as `src.*` so the package-relative imports inside src/ resolve.
+# conftest.py puts the project root on sys.path and mocks the ComfyUI modules.
+from src.merge.algorithms import (
     linear_merge,
     get_merge_algorithm,
     MERGE_ALGORITHMS,
 )
-from merge.utils import apply_weights_to_tensors
+from src.merge.utils import apply_weights_to_tensors
 
 
 class TestApplyWeightsToTensors:
@@ -116,7 +113,7 @@ class TestAlgorithmRegistry:
 class TestLinearMerge:
     """Tests for linear merge algorithm."""
 
-    @patch('merge.algorithms.LinearMergeTask')
+    @patch('src.merge.algorithms.LinearMergeTask')
     def test_linear_merge_calls_task(self, mock_task_class):
         """Test that linear merge creates and executes LinearMergeTask."""
         # Setup mocks
@@ -153,7 +150,7 @@ class TestLinearMerge:
         # Verify result
         assert torch.allclose(result, torch.ones(10, 10))
 
-    @patch('merge.algorithms.LinearMergeTask')
+    @patch('src.merge.algorithms.LinearMergeTask')
     def test_linear_merge_default_normalize(self, mock_task_class):
         """Test that normalize defaults to False if not in method_args."""
         mock_task = Mock()

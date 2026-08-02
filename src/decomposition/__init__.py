@@ -16,7 +16,6 @@ from .svd import (
     SVDDecomposer,
     RandomizedSVDDecomposer,
     EnergyBasedRandomizedSVDDecomposer,
-    QRDecomposer,
 )
 
 __all__ = [
@@ -28,5 +27,4 @@ __all__ = [
     'SVDDecomposer',
     'RandomizedSVDDecomposer',
     'EnergyBasedRandomizedSVDDecomposer',
-    'QRDecomposer',
 ]

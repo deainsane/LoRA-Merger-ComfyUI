@@ -6,17 +6,13 @@ Tests tensor decomposition functionality including SVD, QR, and error handling.
 
 import pytest
 import torch
-import sys
-from pathlib import Path
 
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from decomposition import (
+# Imported as `src.*` so the package-relative imports inside src/ resolve.
+# conftest.py puts the project root on sys.path and mocks the ComfyUI modules.
+from src.decomposition import (
     SVDDecomposer,
     RandomizedSVDDecomposer,
     EnergyBasedRandomizedSVDDecomposer,
-    QRDecomposer,
     SingularValueDistribution,
 )
 
@@ -26,23 +22,39 @@ class TestSVDDecomposer:
 
     def test_basic_2d_decomposition(self):
         """Test basic 2D tensor decomposition."""
-        decomposer = SVDDecomposer()
+        # return_statistics is a constructor option, not a decompose() argument.
+        decomposer = SVDDecomposer(return_statistics=True)
         weight = torch.randn(100, 50)
         target_rank = 10
 
-        up, down, alpha, stats = decomposer.decompose(
-            weight, target_rank, return_statistics=True
-        )
+        up, down, alpha, stats = decomposer.decompose(weight, target_rank)
 
         # Check shapes
         assert up.shape == (100, 10)
         assert down.shape == (10, 50)
         assert isinstance(alpha, float)
 
-        # Check reconstruction quality
+        # Reconstruction quality is bounded by the discarded singular values, not
+        # by the decomposer: for a full-rank random Gaussian, a rank-10 truncation
+        # of 50 singular values necessarily loses ~75% of the Frobenius norm.
+        # Assert we land at that optimum rather than at an arbitrary threshold.
         reconstructed = up @ down
         reconstruction_error = torch.norm(weight - reconstructed) / torch.norm(weight)
-        assert reconstruction_error < 0.5  # Should be reasonable approximation
+
+        S = torch.linalg.svdvals(weight)
+        optimal_error = (S[target_rank:].pow(2).sum() / S.pow(2).sum()).sqrt()
+        assert reconstruction_error < optimal_error + 0.01
+
+    def test_low_rank_input_reconstructs_accurately(self):
+        """A genuinely low-rank matrix is recovered with little error."""
+        decomposer = SVDDecomposer()
+        weight = torch.randn(100, 10) @ torch.randn(10, 50)
+        weight = weight + 0.01 * torch.randn(100, 50)
+
+        up, down, alpha, _ = decomposer.decompose(weight, target_rank=10)
+
+        reconstruction_error = torch.norm(weight - up @ down) / torch.norm(weight)
+        assert reconstruction_error < 0.05
 
     def test_4d_conv_decomposition(self):
         """Test 4D convolutional tensor decomposition."""
@@ -77,7 +89,11 @@ class TestSVDDecomposer:
         recon_sym = up_sym @ down_sym
         recon_asym = up_asym @ down_asym
 
-        assert torch.allclose(recon_sym, recon_asym, rtol=1e-4)
+        # The product is mathematically identical either way -- the distributions
+        # only decide whether S goes into up, into down, or is split as sqrt(S)
+        # across both. atol is needed because the default (1e-8) is below float32
+        # rounding for entries near zero; observed difference is ~5e-7.
+        assert torch.allclose(recon_sym, recon_asym, rtol=1e-4, atol=1e-5)
 
     def test_statistics_calculation(self):
         """Test that statistics are calculated correctly."""
@@ -211,27 +227,6 @@ class TestEnergyBasedRandomizedSVDDecomposer:
         assert stats_high is not None
 
 
-class TestQRDecomposer:
-    """Tests for QR decomposer."""
-
-    def test_qr_decomposition(self):
-        """Test basic QR decomposition."""
-        decomposer = QRDecomposer()
-        weight = torch.randn(100, 50)
-        target_rank = 20
-
-        up, down, alpha, _ = decomposer.decompose(weight, target_rank)
-
-        # Check shapes
-        assert up.shape == (100, 20)
-        assert down.shape == (20, 50)
-
-        # QR decomposition should still provide reasonable approximation
-        reconstructed = up @ down
-        reconstruction_error = torch.norm(weight - reconstructed) / torch.norm(weight)
-        assert reconstruction_error < 1.0  # Looser bound than SVD
-
-
 class TestErrorHandling:
     """Tests for error handling in decomposition."""
 
@@ -248,11 +243,24 @@ class TestErrorHandling:
         decomposer = SVDDecomposer(return_statistics=True)
         weight = torch.zeros(50, 30)
 
-        # Should not crash, should handle gracefully
+        # The zero-matrix guard lives in dynamic rank selection; without a
+        # dynamic_method the caller has pinned the rank and target_rank is honoured.
+        up, down, alpha, stats = decomposer.decompose(
+            weight, target_rank=10, dynamic_method="sv_ratio", dynamic_param=2.0
+        )
+
+        # Rank should collapse to the minimum for a numerically zero matrix
+        assert stats['new_rank'] == 1
+
+    def test_zero_matrix_fixed_rank_is_honoured(self):
+        """A pinned rank (no dynamic_method) is kept even for a zero matrix."""
+        decomposer = SVDDecomposer(return_statistics=True)
+        weight = torch.zeros(50, 30)
+
         up, down, alpha, stats = decomposer.decompose(weight, target_rank=10)
 
-        # Rank should be minimal for zero matrix
-        assert stats['new_rank'] == 1
+        assert stats['new_rank'] == 10
+        assert torch.allclose(up @ down, torch.zeros(50, 30))
 
     def test_invalid_dynamic_method(self):
         """Test that invalid dynamic method raises error."""
@@ -290,7 +298,6 @@ class TestIntegrationWithFixtures:
             SVDDecomposer(),
             RandomizedSVDDecomposer(),
             EnergyBasedRandomizedSVDDecomposer(),
-            QRDecomposer(),
         ]
 
         for decomposer in decomposers:
@@ -309,7 +316,6 @@ class TestIntegrationWithFixtures:
         decomposers = [
             SVDDecomposer(),
             RandomizedSVDDecomposer(),
-            QRDecomposer(),
         ]
 
         for decomposer in decomposers:

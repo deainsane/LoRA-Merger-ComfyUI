@@ -48,10 +48,14 @@ def test_n_equal_loras_scale_one_over_n_not_squared():
     assert torch.allclose(merged, d)
 
 
-run([
-    ("elect_sign", test_elect_sign_weighted_majority),
-    ("nonoverlap_keeps_strength", test_disjoint_normalize_nonoverlap_keeps_strength),
-    ("conflict_arbitrated", test_disjoint_normalize_overlap_conflict_arbitrated),
-    ("linear_weighted_average", test_linear_normalize_is_weighted_average),
-    ("n_loras_1_over_n", test_n_equal_loras_scale_one_over_n_not_squared),
-])
+# Runnable as a plain script (`python tests/<file>.py`); under pytest the
+# test_* functions are collected directly, so the script runner must not fire
+# at import time -- it calls sys.exit() and would abort collection.
+if __name__ == "__main__":
+    run([
+        ("elect_sign", test_elect_sign_weighted_majority),
+        ("nonoverlap_keeps_strength", test_disjoint_normalize_nonoverlap_keeps_strength),
+        ("conflict_arbitrated", test_disjoint_normalize_overlap_conflict_arbitrated),
+        ("linear_weighted_average", test_linear_normalize_is_weighted_average),
+        ("n_loras_1_over_n", test_n_equal_loras_scale_one_over_n_not_squared),
+    ])

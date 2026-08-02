@@ -91,8 +91,12 @@ def run(tests):
     print(f"\nAll {len(tests)} passed")
 
 
-run([
-    ("each_mode_nonzero", test_each_mode_produces_nonzero_lora),
-    ("additive_stronger_than_average", test_additive_stronger_than_average),
-    ("single_owner_not_zero", test_single_owner_key_not_zero),
-])
+# Runnable as a plain script (`python tests/<file>.py`); under pytest the
+# test_* functions are collected directly, so the script runner must not fire
+# at import time -- it calls sys.exit() and would abort collection.
+if __name__ == "__main__":
+    run([
+        ("each_mode_nonzero", test_each_mode_produces_nonzero_lora),
+        ("additive_stronger_than_average", test_additive_stronger_than_average),
+        ("single_owner_not_zero", test_single_owner_key_not_zero),
+    ])

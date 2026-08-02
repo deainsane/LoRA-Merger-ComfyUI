@@ -61,4 +61,8 @@ def run(tests):
     print(f"\nAll {len(tests)} passed")
 
 
-run([("delta_space_blend_aligns", test_delta_space_blend_aligns_with_average)])
+# Runnable as a plain script (`python tests/<file>.py`); under pytest the
+# test_* functions are collected directly, so the script runner must not fire
+# at import time -- it calls sys.exit() and would abort collection.
+if __name__ == "__main__":
+    run([("delta_space_blend_aligns", test_delta_space_blend_aligns_with_average)])

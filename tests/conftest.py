@@ -1,80 +1,109 @@
-"""
-Pytest configuration and fixtures for LoRA Power-Merger tests
+"""Pytest configuration for LoRA Power-Merger.
 
-This file sets up the test environment by mocking ComfyUI dependencies
-that may not be available in the test environment.
+Sets up the test environment so the whole suite runs on torch, mergekit and
+pytest alone -- no ComfyUI installation required.
+
+Deliberately lives in tests/ rather than at the project root: the root holds an
+``__init__.py`` (the ComfyUI node entry point, which imports ComfyUI), so pytest
+would import a root-level conftest as a submodule of that package and execute the
+entry point before any test ran. tests/ is not a package, so this file imports on
+its own.
 """
 
-import sys
 import os
+import sys
+import types
 from unittest.mock import MagicMock
-from typing import Tuple
-import torch
 
-# Add the src directory to the path to allow imports
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-src_path = os.path.join(project_root, 'src')
-if src_path not in sys.path:
-    sys.path.insert(0, src_path)
+# Put the PROJECT ROOT (not src/) on the path, so modules under test are imported
+# as `src.<module>`. Modules in src/ use package-relative imports (`from ..types
+# import ...`); importing them as top-level modules makes those resolve beyond
+# the top-level package and fail. src/__init__.py is empty, so this pulls in no
+# ComfyUI dependencies by itself.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
-# Prevent pytest from treating the project root as a package
-# by ensuring tests are collected from tests directory only
-import pytest
+
+def _stub_root_package():
+    """Stop pytest from executing the project root's ``__init__.py``.
+
+    Because the root holds an ``__init__.py``, pytest treats the project root as a
+    package and imports it in ``Package.setup()`` before running any test under
+    it. That file is the ComfyUI node entry point (``from .src.lora_apply import
+    ...``), so importing it outside a ComfyUI process fails on the relative import
+    -- and it is not test code in any case.
+
+    ``Package.setup()`` goes through ``import_path``, which under the ``importlib``
+    import mode returns an already-present ``sys.modules`` entry before touching
+    the file. The module name it derives for ``<rootdir>/__init__.py`` is
+    ``"__init__"``; seeding that name with an empty module makes the import a
+    no-op. Registered here rather than via ``pytest_collect_directory``: that hook
+    fires only while recursing into directories, not for the parent packages of a
+    test path named directly on the command line.
+    """
+    sys.modules.setdefault("__init__", types.ModuleType("__init__"))
+
 
 def pytest_ignore_collect(collection_path, config):
-    """Ignore collection of __init__.py files and src/ directory."""
+    """Never collect package __init__.py files or anything under src/."""
     path_str = str(collection_path)
     if path_str.endswith('__init__.py'):
         return True
-    if '/src/' in path_str or path_str.endswith('/src'):
+    if (os.sep + 'src' + os.sep) in path_str or path_str.endswith(os.sep + 'src'):
         return True
     return False
 
-# Mock ComfyUI modules before any test imports
-def pytest_configure(config):
-    """Configure pytest and mock unavailable modules"""
 
-    # Mock comfy module
+def _mock_comfyui_modules():
+    """Install stand-ins for the ComfyUI modules src/ imports at module scope."""
     comfy_mock = MagicMock()
     sys.modules['comfy'] = comfy_mock
-    sys.modules['comfy.utils'] = MagicMock()
-    sys.modules['comfy.model_management'] = MagicMock()
-    sys.modules['comfy.lora'] = MagicMock()
-    sys.modules['comfy.weight_adapter'] = MagicMock()
-    sys.modules['comfy.model_patcher'] = MagicMock()
-    sys.modules['comfy.sd'] = MagicMock()
+    for name in ('utils', 'model_management', 'lora', 'weight_adapter',
+                 'model_patcher', 'sd'):
+        sys.modules[f'comfy.{name}'] = MagicMock()
 
-    # Create a LoRAAdapter mock class
     class LoRAAdapterMock:
-        def __init__(self, *args, **kwargs):
-            self.state_dict = {}
+        """Stand-in for comfy.weight_adapter.LoRAAdapter.
+
+        Mirrors the real signature: it is a plain container over ``loaded_keys``
+        and a ``weights`` 6-tuple (up, down, alpha, mid, dora_scale, reshape),
+        which the merger reads back after building its output state dict.
+        """
+
+        name = "lora"
+
+        def __init__(self, loaded_keys=None, weights=None):
+            self.loaded_keys = set() if loaded_keys is None else loaded_keys
+            self.weights = weights
 
     comfy_mock.weight_adapter.LoRAAdapter = LoRAAdapterMock
+    sys.modules['comfy.weight_adapter'].LoRAAdapter = LoRAAdapterMock
 
-    # Mock comfy_util module
-    comfy_util_mock = MagicMock()
-    sys.modules['comfy_util'] = comfy_util_mock
+    # The merger logs free VRAM around the offload step, formatting the result
+    # with `:.0f` -- a bare MagicMock would raise on __format__.
+    mm = sys.modules['comfy.model_management']
+    mm.get_free_memory.return_value = 8 * 1024 ** 3
+    comfy_mock.model_management = mm
+    comfy_mock.utils = sys.modules['comfy.utils']
 
-    # Mock nodes module (ComfyUI nodes)
-    nodes_mock = MagicMock()
-    sys.modules['nodes'] = nodes_mock
+    sys.modules['comfy_extras'] = MagicMock()
+    sys.modules['comfy_extras.nodes_custom_sampler'] = MagicMock()
+    sys.modules['nodes'] = MagicMock()
 
-    # Mock folder_paths module (ComfyUI utility)
     folder_paths_mock = MagicMock()
     folder_paths_mock.get_folder_paths.return_value = []
     folder_paths_mock.folder_names_and_paths = {}
     sys.modules['folder_paths'] = folder_paths_mock
 
-    # Mock comfy_extras module (ComfyUI extras)
-    comfy_extras_mock = MagicMock()
-    sys.modules['comfy_extras'] = comfy_extras_mock
-    sys.modules['comfy_extras.nodes_custom_sampler'] = MagicMock()
 
-    # Mock architectures module to avoid relative import issues
-    architectures_mock = MagicMock()
-    # Define the UP_DOWN_ALPHA_TUPLE type alias
-    architectures_mock.sd_lora.UP_DOWN_ALPHA_TUPLE = Tuple[torch.Tensor, torch.Tensor, float]
-    sys.modules['architectures'] = architectures_mock
-    sys.modules['architectures.sd_lora'] = architectures_mock.sd_lora
-    sys.modules['architectures.general_architecture'] = MagicMock()
-    sys.modules['architectures.wan_lora'] = MagicMock()
+def pytest_configure(config):
+    """Mock ComfyUI before test modules (and the src/ modules they import) load."""
+    _mock_comfyui_modules()
+    _stub_root_package()
+
+
+# Also applied at import time: conftest is imported before collection, so this
+# covers anything that resolves earlier than pytest_configure.
+_mock_comfyui_modules()
+_stub_root_package()

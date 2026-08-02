@@ -138,17 +138,21 @@ def test_della_wide_layer_preserves_density_and_monotonic():
     assert kept_mask[hi].float().mean().item() > kept_mask[~hi].float().mean().item() + 0.05
 
 
-run([
-    ("magnitude", test_magnitude_matches_mergekit),
-    ("magnitude_rescale_l1", test_magnitude_rescale_l1_matches),
-    ("outliers", test_outliers_matches_mergekit),
-    ("bernoulli_seed", test_bernoulli_matches_with_seed),
-    ("della_seed", test_della_matches_with_seed),
-    ("density_one_identity", test_density_one_is_identity),
-    ("della_large_density", test_della_large_preserves_density),
-    ("della_large_l1", test_della_large_l1_preserved),
-    ("della_large_monotonic", test_della_large_keep_prob_monotonic_in_magnitude),
-    ("della_chunk_density", test_della_chunk_boundary_invariant_density),
-    ("della_scatter_rank_equivalence", test_della_scatter_rank_equivalence),
-    ("della_wide_density_monotonic", test_della_wide_layer_preserves_density_and_monotonic),
-])
+# Runnable as a plain script (`python tests/<file>.py`); under pytest the
+# test_* functions are collected directly, so the script runner must not fire
+# at import time -- it calls sys.exit() and would abort collection.
+if __name__ == "__main__":
+    run([
+        ("magnitude", test_magnitude_matches_mergekit),
+        ("magnitude_rescale_l1", test_magnitude_rescale_l1_matches),
+        ("outliers", test_outliers_matches_mergekit),
+        ("bernoulli_seed", test_bernoulli_matches_with_seed),
+        ("della_seed", test_della_matches_with_seed),
+        ("density_one_identity", test_density_one_is_identity),
+        ("della_large_density", test_della_large_preserves_density),
+        ("della_large_l1", test_della_large_l1_preserved),
+        ("della_large_monotonic", test_della_large_keep_prob_monotonic_in_magnitude),
+        ("della_chunk_density", test_della_chunk_boundary_invariant_density),
+        ("della_scatter_rank_equivalence", test_della_scatter_rank_equivalence),
+        ("della_wide_density_monotonic", test_della_wide_layer_preserves_density_and_monotonic),
+    ])

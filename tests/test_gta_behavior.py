@@ -57,8 +57,12 @@ def test_normalize_does_not_collapse_as_1_over_n_squared():
     assert merged.norm() > 0.5 * avg.norm()
 
 
-run([
-    ("refactor_reconstructs", test_refactor_reconstructs_delta),
-    ("nonoverlap_keeps_strength", test_style_plus_character_nonoverlap_keeps_strength),
-    ("no_1_over_n_squared", test_normalize_does_not_collapse_as_1_over_n_squared),
-])
+# Runnable as a plain script (`python tests/<file>.py`); under pytest the
+# test_* functions are collected directly, so the script runner must not fire
+# at import time -- it calls sys.exit() and would abort collection.
+if __name__ == "__main__":
+    run([
+        ("refactor_reconstructs", test_refactor_reconstructs_delta),
+        ("nonoverlap_keeps_strength", test_style_plus_character_nonoverlap_keeps_strength),
+        ("no_1_over_n_squared", test_normalize_does_not_collapse_as_1_over_n_squared),
+    ])

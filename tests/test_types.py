@@ -6,13 +6,10 @@ Tests type guards, validators, and type definitions from src/types.py.
 
 import pytest
 import torch
-import sys
-from pathlib import Path
 
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from types import (
+# Imported as `src.types`, never bare `types` -- that name is the stdlib module.
+# conftest.py puts the project root on sys.path and mocks the ComfyUI modules.
+from src.types import (
     is_lora_tensors,
     is_lora_stack,
     validate_lora_tensors,

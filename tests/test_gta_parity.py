@@ -63,8 +63,12 @@ def test_resolve_rescale_default_matches_mergekit():
     assert gta.resolve_rescale_norm("ties", "l2") == "l2"
 
 
-run([
-    ("task_arithmetic_parity", test_task_arithmetic_parity),
-    ("ties_parity", test_ties_parity),
-    ("resolve_rescale_default_matches_mergekit", test_resolve_rescale_default_matches_mergekit),
-])
+# Runnable as a plain script (`python tests/<file>.py`); under pytest the
+# test_* functions are collected directly, so the script runner must not fire
+# at import time -- it calls sys.exit() and would abort collection.
+if __name__ == "__main__":
+    run([
+        ("task_arithmetic_parity", test_task_arithmetic_parity),
+        ("ties_parity", test_ties_parity),
+        ("resolve_rescale_default_matches_mergekit", test_resolve_rescale_default_matches_mergekit),
+    ])

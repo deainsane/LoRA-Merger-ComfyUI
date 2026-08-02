@@ -1,4 +1,4 @@
-from blocks import normalize_key, parse_weight_list
+from src.blocks import normalize_key, parse_weight_list
 
 
 class TestNormalizeKey:
@@ -31,7 +31,7 @@ class TestParseWeightList:
         assert parse_weight_list(None) == []
 
 
-from blocks import make_category, key_weight
+from src.blocks import make_category, key_weight
 
 KREA2_DEF = {
     "model": "KREA2",
@@ -85,7 +85,7 @@ class TestKeyWeight:
 
 
 from collections import OrderedDict
-from blocks import compute_lora_weights, merge_selection, build_block_selection_dict, resolve_block_selection
+from src.blocks import compute_lora_weights, merge_selection, build_block_selection_dict, resolve_block_selection
 
 
 class TestComputeLoraWeights:
@@ -186,7 +186,7 @@ class TestResolveBlockSelection:
 
 
 import torch
-from blocks import apply_block_weights
+from src.blocks import apply_block_weights
 
 
 class TestApplyBlockWeights:
@@ -222,7 +222,7 @@ class TestApplyBlockWeights:
         assert torch.allclose(up, torch.ones(4, 2))
 
 
-from blocks import build_krea2_definition, build_klein_definition
+from src.blocks import build_krea2_definition, build_klein_definition
 
 
 class TestBuildKrea2:

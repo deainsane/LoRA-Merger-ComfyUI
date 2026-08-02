@@ -118,10 +118,14 @@ def run(tests):
     print(f"\nAll {len(tests)} passed")
 
 
-run([
-    ("modes_constant", test_modes_constant),
-    ("additive_is_blend_times_sum", test_additive_is_blend_times_sum),
-    ("average_is_blend_times_mean", test_average_is_blend_times_mean),
-    ("strength_linear_gain_additive", test_strength_is_linear_gain_additive),
-    ("single_owner_fallback", test_single_owner_fallback_not_zero),
-])
+# Runnable as a plain script (`python tests/<file>.py`); under pytest the
+# test_* functions are collected directly, so the script runner must not fire
+# at import time -- it calls sys.exit() and would abort collection.
+if __name__ == "__main__":
+    run([
+        ("modes_constant", test_modes_constant),
+        ("additive_is_blend_times_sum", test_additive_is_blend_times_sum),
+        ("average_is_blend_times_mean", test_average_is_blend_times_mean),
+        ("strength_linear_gain_additive", test_strength_is_linear_gain_additive),
+        ("single_owner_fallback", test_single_owner_fallback_not_zero),
+    ])

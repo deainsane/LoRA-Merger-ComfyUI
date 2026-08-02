@@ -6,14 +6,11 @@ Tests validators for LoRA stacks, tensor shapes, and merge parameters.
 
 import pytest
 import torch
-import sys
-from pathlib import Path
 from unittest.mock import Mock
 
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from validation import (
+# Imported as `src.*` so the package-relative imports inside src/ resolve.
+# conftest.py puts the project root on sys.path and mocks the ComfyUI modules.
+from src.validation import (
     LoRAStackValidator,
     TensorShapeValidator,
     MergeParameterValidator,

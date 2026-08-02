@@ -138,6 +138,24 @@ class TensorShapeValidator:
 
         # Check all tensors against reference
         for lora_name, (up, down, alpha) in tensors_dict.items():
+            # Validate up/down dimensions are compatible. This is a per-LoRA
+            # (self-consistency) check, so it runs for the reference tensor too --
+            # otherwise a single incompatible LoRA passes validation unexamined.
+            if len(up.shape) >= 2 and len(down.shape) >= 2:
+                up_rank = up.shape[1]
+                down_rank = down.shape[0]
+
+                if up_rank != down_rank:
+                    errors.append({
+                        "code": "INCOMPATIBLE_DIMENSIONS",
+                        "message": (
+                            f"LoRA '{lora_name}' has incompatible up/down dimensions: "
+                            f"up rank {up_rank} != down rank {down_rank}"
+                        ),
+                        "location": lora_name
+                    })
+
+            # The remaining checks compare against the reference tensor.
             if lora_name == first_name:
                 continue
 
@@ -164,21 +182,6 @@ class TensorShapeValidator:
                     f"LoRA '{lora_name}' down tensor shape {down.shape} "
                     f"differs from reference {ref_down_shape}"
                 )
-
-            # Validate up/down dimensions are compatible
-            if len(up.shape) >= 2 and len(down.shape) >= 2:
-                up_rank = up.shape[1] if len(up.shape) == 2 else up.shape[1]
-                down_rank = down.shape[0]
-
-                if up_rank != down_rank:
-                    errors.append({
-                        "code": "INCOMPATIBLE_DIMENSIONS",
-                        "message": (
-                            f"LoRA '{lora_name}' has incompatible up/down dimensions: "
-                            f"up rank {up_rank} != down rank {down_rank}"
-                        ),
-                        "location": lora_name
-                    })
 
         return {
             "valid": len(errors) == 0,
