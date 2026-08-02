@@ -241,7 +241,7 @@ Nearest neighbor parameter swapping.
 **Parameters:**
 - `distance_metric` ("cosine" or "euclidean"): Distance measure
 
-> **Delta-space + `average_weights` (v2.2.5):** SLERP, NuSLERP, Karcher and NearSwap now merge in
+> **Delta-space + `average_weights` (v2.3.0):** SLERP, NuSLERP, Karcher and NearSwap now merge in
 > delta space (like the GTA family), reconstructing the full LoRA delta instead of merging the
 > up/down factors separately. Each also exposes `average_weights` (default **OFF** = additive, so
 > stacked LoRAs keep full magnitude; **ON** = normalized average/blend). For these interpolation
@@ -706,6 +706,68 @@ Detected Qwen Image Edit architecture (272 keys)
 ```
 
 This enables architecture-agnostic preset filters (`"attn-only"`, `"mlp-only"`, `"attn-mlp"`) to work seamlessly across all supported architectures.
+
+
+## Changelog
+
+### 2.3.0
+
+Delta-space merging for every method, a VRAM overhaul that makes large Flux/DiT
+merges viable on 8 GB cards, and clearer widget names.
+
+**Breaking changes** — saved workflows need attention:
+
+- **`PM Linear` node removed.** In the delta-space pipeline it was identical to
+  Task Arithmetic at default settings, with fewer knobs. Saved workflows using it
+  will load it as an undefined node — replace with **PM Task Arithmetic**, which
+  produces identical output at defaults. The `linear` merge mode itself is kept.
+- **Widget renames on the merge method nodes:** `ties` → `sign_consensus`,
+  `normalize` → `average_weights`, `lambda_` → `output_scale`. Renamed widgets
+  lose their saved values and fall back to defaults.
+- **`average_weights` now defaults to OFF.** ON computes a weighted average
+  (÷ Σ weights), which silently halves stacked LoRAs. Native ComfyUI stacks
+  additively (`W + Σ strengthᵢ·Δᵢ`), so additive is now the default. Merges that
+  relied on the old normalizing behavior need it switched back on.
+- **`PM Block Selector` no longer takes a `lora_stack` input.** Selectors chain
+  through index-based configs instead; reconnect existing chains.
+
+**Added**
+
+- **Delta-space interpolation:** SLERP, NuSLERP, Karcher, NearSwap and SCE
+  reconstruct the full LoRA delta and merge there, instead of merging the
+  up/down factors separately — which injected meaningless `up_i @ down_j`
+  cross-terms. For these methods, per-LoRA strength now controls magnitude only;
+  blend position comes from the method's own parameter.
+- **`average_weights` toggle** on SLERP, NuSLERP, Karcher and NearSwap.
+- **Native delta-space GTA family** (Task Arithmetic, TIES, DARE, DELLA,
+  Breadcrumbs): a self-contained sparsify + sign-election + merge implementation
+  that refactors back into a LoRA via randomized SVD with dynamic rank.
+- **`offload_models` toggle** on PM LoRA Merger (default on): evicts resident
+  DIT/CLIP/VAE from VRAM before a CUDA merge. ComfyUI reloads them lazily.
+- **`refactor_method` widget** to pick the merged-delta → LoRA refactor strategy.
+
+**Fixed**
+
+- OOM and hard segfaults merging large Flux layers on 8 GB cards, from several
+  directions: randomized SVD for the refactor, a streaming merge instead of
+  stacking (~2× lower peak), serializing the delta-space path on CUDA, chunked
+  della sparsify bounded by both rows and element count, and GPU-histogram
+  thresholds replacing full argsorts for magnitude/outlier/top-k selection. The
+  histogram avoids both the OOM and the ~300× slowdown of a host-side fallback
+  that made TIES and Breadcrumbs unusable.
+- Memory-frugal Karcher and SCE that consume the delta list in place rather than
+  making ~3N full-tensor copies.
+- Saving a merged LoRA no longer fails on transposed or sliced tensor views that
+  safetensors refuses to serialize.
+- LoRA shape validation missed incompatible up/down ranks on the first (or only)
+  LoRA in a stack.
+- `src.decomposition` exported a `QRDecomposer` that did not exist, making the
+  package unimportable.
+
+**Internal**
+
+- Test suite runs without a ComfyUI installation: 238 tests via `pytest tests/`,
+  up from 61 reachable before. See [RUN_TESTS.md](RUN_TESTS.md).
 
 
 ## License
