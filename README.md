@@ -4,7 +4,7 @@ Advanced LoRA merging for ComfyUI with Mergekit integration, supporting 8+ merge
 
 ![pm-basic_workflow.png](assets/pm-basic_workflow.png)
 
-This is an enhanced fork of laksjdjf's [LoRA Merger](https://github.com/laksjdjf/LoRA-Merger-ComfyUI) with extensive refactoring and new features. Core merging algorithms from [Mergekit](https://github.com/arcee-ai/mergekit) by Arcee AI.
+This is an enhanced fork of laksjdjf's [LoRA Merger](https://github.com/laksjdjf/LoRA-Merger-ComfyUI) with extensive refactoring and new features. Core merging algorithms from [Mergekit](https://github.com/deainsane/mergekit) by Arcee AI.
 
 ## Features
 
@@ -31,7 +31,7 @@ pip install -r requirements.txt
 
 **Requirements:**
 - PyTorch
-- Mergekit (`git+https://github.com/arcee-ai/mergekit.git`)
+- Mergekit (`git+https://github.com/deainsane/mergekit.git`)
 - lxml
 
 ## Quick Start
@@ -807,7 +807,7 @@ SOFTWARE.
 ## Credits
 
 - Original LoRA Merger by [laksjdjf](https://github.com/laksjdjf/LoRA-Merger-ComfyUI)
-- Mergekit by [Arcee AI](https://github.com/arcee-ai/mergekit)
+- Mergekit by [Arcee AI](https://github.com/deainsane/mergekit)
 - TIES-Merging: [Paper](https://arxiv.org/abs/2306.01708)
 - DARE: [Paper](https://arxiv.org/abs/2311.03099)
 - ComfyUI by [comfyanonymous](https://github.com/comfyanonymous/ComfyUI)

@@ -1,2 +1,2 @@
-git+https://github.com/arcee-ai/mergekit.git#egg=mergekit
+git+https://github.com/deainsane/mergekit.git#egg=mergekit
 lxml
